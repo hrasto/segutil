@@ -27,4 +27,10 @@ setuptools.setup(
     package_data={
         "segmenters": ["data/*"],
     },
+    install_requires=[
+        'pandas',
+        'tokenizers',
+        'numpy',
+        'morfessor'
+    ]
 )
