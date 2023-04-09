@@ -1,11 +1,13 @@
 from itertools import combinations, product
 from json import load
 import os
+from turtle import update
 #from multiprocessing.sharedctypes import Value
 import numpy as np
 from tokenizers import Tokenizer, SentencePieceBPETokenizer
 from tokenizers import models, normalizers, pre_tokenizers, decoders, trainers
 import morfessor
+from morfessor.baseline import NumMorphCorpusWeight, MorphLengthCorpusWeight
 import random
 import pickle
 from typing import List, Dict
@@ -47,7 +49,7 @@ def list_built_in():
     names = [fname.split('.')[0] for fname in os.listdir(make_full_fname('')) if fname != 'celex_morpho_segmentation_curated.tsv']
     return ['celex_morpho', 'morfessor', 'bpe'] + names
 
-def built_in_segmenter(name):
+def built_in(name):
     if name == 'celex_morpho':
         #fpath = pkg_resources.resource_filename('kgp', 'grammars/' + source + '.xml')
         celex_morpho = load_celex_morpho()
@@ -142,13 +144,27 @@ class LookUpSegmenter(Segmenter):
             raise SegmentationError("segmentation rule not found")
 
 class SegmenterMorfessor(Segmenter):
-    def __init__(self, sents):
-        counter = collections.Counter(itertools.chain.from_iterable(sents))
-        train_data = [(count, token) for token, count in counter.items()]
-        self.model = morfessor.BaselineModel()
-        if len(train_data) > 0:
-            self.model.load_data(train_data)
-            self.model.train_batch()
+    def __init__(self, sents, num_morph_types=None, morph_length=None, corpusweight=1.0, threshold=0.01):
+        self.model=None
+        if len(sents) > 0:
+            if type(sents[0]) == str: 
+                sents = [sent.split() for sent in sents]
+            tokens_flat = itertools.chain.from_iterable(sents)
+            counter = collections.Counter(tokens_flat)
+            train_data = [(count, token) for token, count in counter.items()]
+            self.model = morfessor.BaselineModel(corpusweight=corpusweight)
+
+            updater = None
+            if num_morph_types is not None: 
+                updater = NumMorphCorpusWeight(num_morph_types, threshold)
+            elif morph_length is not None: 
+                updater = MorphLengthCorpusWeight(morph_length, threshold)
+            if updater is not None:
+                self.model.set_corpus_weight_updater(updater)
+                
+            if len(train_data) > 0:
+                self.model.load_data(train_data)
+                self.model.train_batch()
 
     def segment(self, sent: str):
         if self.model == None:
