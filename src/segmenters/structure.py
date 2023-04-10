@@ -4,8 +4,6 @@ import collections
 import os
 import pickle
 
-from build.lib.segmenters.structure import TryFromIterable 
-
 """
 class Vocab():
     def __init__(self, sentences, add_special_tokens=True):
@@ -401,12 +399,6 @@ class TryFromFile:
             if self.file is not None: 
                 self.file.close()
             raise StopIteration()
-
-def read_corpus_line(line):
-    word_alts = line.split()
-    words = [wa.split('|')[0] for wa in word_alts]
-    subwords = [sw for w in words for sw in w.split('-')]
-    return subwords                
 
 def read_segmentation_line(line):
     #singlify = lambda vals: vals[0] if len(vals) == 1 else vals
