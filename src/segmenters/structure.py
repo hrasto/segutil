@@ -2,7 +2,9 @@ import numpy as np
 import itertools
 import collections
 import os
-import pickle 
+import pickle
+
+from build.lib.segmenters.structure import TryFromIterable 
 
 """
 class Vocab():
@@ -400,29 +402,36 @@ class TryFromFile:
                 self.file.close()
             raise StopIteration()
 
-class TryFromIterable:
-    def __init__(self, iterable):
-        self.iterable = TryFromFile(iterable)
+def read_corpus_line(line):
+    word_alts = line.split()
+    words = [wa.split('|')[0] for wa in word_alts]
+    subwords = [sw for w in words for sw in w.split('-')]
+    return subwords                
 
-    def readline(line):
-        singlify = lambda vals: vals[0] if len(vals) == 1 else vals
-        if type(line) == int:
-            return line
-        
-        if type(line) == str:
-            line = line.strip().split()
-            if len(line) > 1:
-                return list(map(StructuredCorpus._read_label, line))
-            if len(line) == 1:
-                return StructuredCorpus._read_label(line[0])
-            assert False
-
-        if type(line) == list:
+def read_segmentation_line(line):
+    #singlify = lambda vals: vals[0] if len(vals) == 1 else vals
+    if type(line) == int:
+        return line
+    
+    if type(line) == str:
+        line = line.strip().split()
+        if len(line) > 1:
             return list(map(StructuredCorpus._read_label, line))
+        if len(line) == 1:
+            return StructuredCorpus._read_label(line[0])
         assert False
 
+    if type(line) == list:
+        return list(map(StructuredCorpus._read_label, line))
+    assert False
+
+class FileOrIterableReader:
+    def __init__(self, iterable, read_fn=read_segmentation_line):
+        self.iterable = TryFromFile(iterable)
+        self.read_fn = read_fn
+
     def __iter__(self):
-        nested_labels_iterable = map(TryFromIterable.readline, self.iterable)
+        nested_labels_iterable = map(self.read_fn, self.iterable)
         self.iter = iter(nested_labels_iterable)
         self.sub_iter = None
         return self
@@ -446,7 +455,7 @@ class TryFromIterable:
 
 class SegmentationParser:
     def __init__(self, segmentation):
-        self.segmentation = TryFromIterable(segmentation)
+        self.segmentation = FileOrIterableReader(segmentation)
 
     def __iter__(self):
         self.seg_iter = iter(self.segmentation)
@@ -484,9 +493,9 @@ class SegmentationAligner:
         self.seg_iter = iter(self.seg_parser)
         self.whole_lines = not self.seg_iter.is_nested
         if self.whole_lines:
-            self.seq_iter = iter(map(TryFromIterable.readline, TryFromFile(self.sequences)))
+            self.seq_iter = iter(map(FileOrIterableReader.read_segmentation_line, TryFromFile(self.sequences)))
         else:
-            self.seq_iter = iter(TryFromIterable(self.sequences))
+            self.seq_iter = iter(FileOrIterableReader(self.sequences))
         return self
         
     def __next__(self):
