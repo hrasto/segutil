@@ -17,6 +17,8 @@ import math
 import pkg_resources
 import pandas as pd
 
+print('hey')
+
 def make_full_fname(fname):
     try:
         return pkg_resources.resource_filename('segmenters', 'data/' + fname)
