@@ -1,9 +1,13 @@
 # Segmenters
 
+To install: 
+
+`pip install git+https://github.com/hrasto/segmenters`
+
+To use: 
+
 ``` python
-import segmentation
-import pandas as pd
-import os
+import segmenters.segmentation as segmentation
 
 print(segmentation.list_built_in())
 
@@ -16,3 +20,5 @@ print(bpe.segment("records"))
 fb = segmentation.FallBackSegmenter([celex_morpho, bpe])
 print(fb.segment("unhinged"))
 ```
+
+etc
