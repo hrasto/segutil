@@ -17,8 +17,6 @@ import math
 import pkg_resources
 import pandas as pd
 
-print('hey')
-
 def make_full_fname(fname):
     try:
         return pkg_resources.resource_filename('segmenters', 'data/' + fname)
@@ -89,7 +87,7 @@ class SegmentationError(Exception):
         super().__init__(*args)
 
 class Segmenter:
-    def __init__(self, sents: List[str]):
+    def __init__(self, sents: List[str] = []):
         pass
     def segment(self, sent: str):
         pass
@@ -102,6 +100,8 @@ class Segmenter:
         return segmenter
 
 class SegmenterNotSerializable(Segmenter):
+    def __init__(self):
+        super().__init__([])
     def save(self, fpath):
         raise Exception("cant serialize this segmenter")
     def load(self, fpath):
