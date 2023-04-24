@@ -2,7 +2,7 @@ import numpy as np
 import itertools
 import collections
 import os
-import pickle
+import pickle 
 
 """
 class Vocab():
@@ -110,23 +110,28 @@ class TextFileIterator:
 #    return dict(zip(items, np.arange(len(items))))
 
 class Vocab:
-    def __init__(self, idx_to_word, last_token_unk=False):
-        self.word_to_idx = {}
-        self.idx_to_word = []
-        for word in sorted(set(idx_to_word)):
-            self.add_token(word)
+    def __init__(self, tokens, last_token_unk=False):
+        types, counts = np.unique([t for t in tokens], return_counts=True)
+        self.idx_to_word = list(types)
+        self.idx_to_count = list(map(int, counts))
+        self.word_to_idx = {word: idx for idx, word in enumerate(self.idx_to_word)}
+
         if last_token_unk:
             self.unk_token = self.idx_to_word[-1]
         else:
-            self.unk_token = self.add_token('<UNK>')
+            self.unk_token = self.add_type('<UNK>')
 
     def __len__(self):
         return len(self.idx_to_word)
 
-    def add_token(self, token):
-        self.word_to_idx[token] = len(self.idx_to_word)
+    def add_type(self, token, count=0):
+        self.word_to_idx[token] = len(self)
         self.idx_to_word.append(token)
+        self.idx_to_count.append(count)
         return token
+
+    def token_count(self):
+        return int(sum(self.idx_to_count))
 
     def encode_token(self, token):
         try:
@@ -143,11 +148,45 @@ class Vocab:
     def decode_token(self, token):
         return self.idx_to_word[token]
 
-    def decode_sent(self, sent):
-        return [self.decode_token(token) for token in sent]
+    def decode_sent(self, sent, stringify=False):
+        tokens = [self.decode_token(token) for token in sent]
+        if stringify: 
+            return ' '.join(tokens)
+        else: 
+            return tokens
 
-    def decode_batch(self, sents):
-        return [self.decode_sent(sent) for sent in sents]
+    def decode_batch(self, sents, stringify=False):
+        return [self.decode_sent(sent, stringify) for sent in sents]
+
+    def type_token_ratio(self):
+        return len(self) / self.token_count()
+
+    def type_lengths(self):
+        return list(map(len, self.idx_to_word))
+
+    def avg_type_len(self):
+        return float(np.mean(self.type_lengths()))
+
+    def avg_token_len(self):
+        return float(np.average(self.type_lengths(), weights=self.idx_to_count))
+
+    def nll(self):
+        proba = [(count+1) / (self.token_count()+len(self)) for count in self.idx_to_count] # add1 smoothing
+        proba = np.array(proba)
+        log_proba = np.log2(proba)
+        return float(-np.sum(proba * log_proba))
+
+    def statistics(self):
+        res = {
+            'token_count': self.token_count(),
+            'type_count': len(self),
+            'type_token_ratio': self.type_token_ratio(),
+            'avg_type_len': self.avg_type_len(),
+            'avg_token_len': self.avg_token_len(),
+            'nll': self.nll(),
+        }
+        res['nllpc'] = res['nll'] / res['avg_token_len']
+        return res
 
 class Corpus(Vocab):
     def __init__(self, idx_to_word, word_to_count, sequences, dirname=None):
@@ -400,30 +439,29 @@ class TryFromFile:
                 self.file.close()
             raise StopIteration()
 
-def read_segmentation_line(line):
-    #singlify = lambda vals: vals[0] if len(vals) == 1 else vals
-    if type(line) == int:
-        return line
-    
-    if type(line) == str:
-        line = line.strip().split()
-        if len(line) > 1:
+class TryFromIterable:
+    def __init__(self, iterable):
+        self.iterable = TryFromFile(iterable)
+
+    def readline(line):
+        singlify = lambda vals: vals[0] if len(vals) == 1 else vals
+        if type(line) == int:
+            return line
+        
+        if type(line) == str:
+            line = line.strip().split()
+            if len(line) > 1:
+                return list(map(StructuredCorpus._read_label, line))
+            if len(line) == 1:
+                return StructuredCorpus._read_label(line[0])
+            assert False
+
+        if type(line) == list:
             return list(map(StructuredCorpus._read_label, line))
-        if len(line) == 1:
-            return StructuredCorpus._read_label(line[0])
         assert False
 
-    if type(line) == list:
-        return list(map(StructuredCorpus._read_label, line))
-    assert False
-
-class FileOrIterableReader:
-    def __init__(self, iterable, read_fn=read_segmentation_line):
-        self.iterable = TryFromFile(iterable)
-        self.read_fn = read_fn
-
     def __iter__(self):
-        nested_labels_iterable = map(self.read_fn, self.iterable)
+        nested_labels_iterable = map(TryFromIterable.readline, self.iterable)
         self.iter = iter(nested_labels_iterable)
         self.sub_iter = None
         return self
@@ -447,7 +485,7 @@ class FileOrIterableReader:
 
 class SegmentationParser:
     def __init__(self, segmentation):
-        self.segmentation = FileOrIterableReader(segmentation)
+        self.segmentation = TryFromIterable(segmentation)
 
     def __iter__(self):
         self.seg_iter = iter(self.segmentation)
@@ -485,9 +523,9 @@ class SegmentationAligner:
         self.seg_iter = iter(self.seg_parser)
         self.whole_lines = not self.seg_iter.is_nested
         if self.whole_lines:
-            self.seq_iter = iter(map(FileOrIterableReader.read_segmentation_line, TryFromFile(self.sequences)))
+            self.seq_iter = iter(map(TryFromIterable.readline, TryFromFile(self.sequences)))
         else:
-            self.seq_iter = iter(FileOrIterableReader(self.sequences))
+            self.seq_iter = iter(TryFromIterable(self.sequences))
         return self
         
     def __next__(self):
@@ -532,3 +570,59 @@ aligned = SegmentationAligner(
     segmentation='doc2dial_segmentations/test_seg3.txt')
 print(list(aligned))
 """
+
+class DummyIter:
+    def __iter__(self):
+        return self
+    def __next__(self):
+        raise StopIteration()
+
+class LMIter:
+    def __init__(self, sequences_nested, context_size=5):
+        self.sequences_nested = sequences_nested
+        self.context_size = context_size
+
+    def __iter__(self):
+        self.iter=iter(self.sequences_nested)
+        self.current_examples=DummyIter()
+        return self
+        
+    def slide(seq, context_size):
+        return [(seq[i:i+context_size], seq[i+context_size]) for i in range(len(seq)-context_size)]
+
+    def __next__(self):
+        try: 
+            return next(self.current_examples)
+        except StopIteration: 
+            current_seq=next(self.iter) # if done, throws StopIteration
+            self.current_examples=iter(LMIter.slide(current_seq, self.context_size))
+            return self.__next__()
+
+class Batchify:
+    def __init__(self, iterable, batch_size):
+        self.iterable = iterable
+        self.batch_size = batch_size
+
+    def __iter__(self):
+        self.iter = iter(self.iterable)
+        return self
+
+    def __next__(self):
+        res = []
+        for _ in range(self.batch_size):
+            try:
+                res.append(next(self.iter))
+            except StopIteration:
+                break        
+        if len(res) == 0:
+            raise StopIteration()
+        return res
+
+def unzip_batch(batch):
+    xs, ys = zip(*batch)
+    return np.array(xs), np.array(ys)
+
+def make_lm_dataset(corpus, context_size, batch_size):
+    iter_corpus_lm = LMIter(corpus, context_size=context_size)
+    iter_corpus_batched = map(unzip_batch, Batchify(iter_corpus_lm, batch_size=batch_size))
+    return iter_corpus_batched
