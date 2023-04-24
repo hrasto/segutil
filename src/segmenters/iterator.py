@@ -1,4 +1,5 @@
 from collections import deque
+import os
 
 class RestartableMapIterator:
     def __init__(self, iterable, fn):
@@ -28,13 +29,11 @@ class RestartableBatchIterator:
     def __next__(self):
         return next(self.iter)
 
-def single_subiter(x):
-    yield x
-
 class FileReader:
-    def __init__(self, fpath, subiter_fn=single_subiter):
+    def __init__(self, fpath):
+        if not os.path.isfile(fpath):
+            raise FileNotFoundError(f'no file found at location {fpath}')
         self.fpath=fpath
-        self.subiter_fn=subiter_fn
     def __iter__(self):
         self.file=open(self.fpath, 'r')
         self.file_iter=iter(self.file)
@@ -52,27 +51,44 @@ class FileReader:
         except StopIteration: 
             self.file_iter.close()
             raise StopIteration()
+    def subiter_fn(self, x):
+        return x
 
-def word2subwords(word):
-    return word.split('|')[0].split('-')
+def line2subwords(line):
+    return [subword for word in line.split() for subword in word.split('|')[0].split('-')]
 
-class ByLineReader(FileReader):
+def line2characters(line):
+    return [ch for ch in line.strip() if ch not in ['|', '-']]
+
+def line2words(line):
+    return [word.split('|')[0].replace('-', '') for word in line.split()]
+
+class LineContextReader(FileReader):
     # in file of 'A-B-C D-E-F\\nG-H-I' yields [A,B,C,D,E,F]
-    def __init__(self, fpath, max_context_size=10, step_size=5):
-        def subiter_fn(line):
-            tokens = [subword for word in line.split() for subword in word2subwords(word)]
-            # use sliding window to constrain maximum context size
-            for subseq in SlidingWindow(tokens, max_context_size, step_size):
-                yield subseq
-        super().__init__(fpath, subiter_fn)
+    def __init__(self, fpath, line2tokens, max_num_words=10):
+        #TODO consider adding a 'min_context_size' parameter
+        self.tokenize = line2tokens
+        self.max_num_words=max_num_words
+        super().__init__(fpath)
 
-class ByWordReader(FileReader):
+    def subiter_fn(self, line):
+        words = line.split()
+        # use sliding window to constrain maximum context size
+        for subseq in SlidingWindow(words, self.max_num_words, self.max_num_words):
+            subseq = ' '.join(subseq)
+            tokens = self.tokenize(subseq)
+            yield tokens
+
+class WordContextReader(FileReader):
     # in file of 'A-B-C D-E-F\\nG-H-I' yields [A,B,C] 
-    def __init__(self, fpath):
-        def subiter_fn(line):
-            for word in line.split():
-                yield word2subwords(word)
-        super().__init__(fpath, subiter_fn)
+    def __init__(self, fpath, line2tokens):
+        self.tokenize = line2tokens
+        super().__init__(fpath)
+
+    def subiter_fn(self, line):
+        for word in line.split():
+            tokens = self.line2tokens(word)
+            yield tokens
 
 #corpus_reader = ByLineReader('/Users/rastislavhronsky/ml-experiments/experiments-spring-2023/corpus/toy/PC_0dot00_CP_0dot00_MI_0dot00/corpus.txt')
 #for word in corpus_reader:
@@ -133,7 +149,10 @@ class SlidingWindow:
         # remove old elements
         if len(self.deque) > 0:
             for _ in range(self.step):
-                self.deque.popleft()
+                try: 
+                    self.deque.popleft()
+                except IndexError: 
+                    raise StopIteration()
         # fill up the deque
         while len(self.deque) < self.win_size + 1:
             try:
