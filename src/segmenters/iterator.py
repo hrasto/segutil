@@ -65,16 +65,17 @@ def line2words(line):
 
 class LineContextReader(FileReader):
     # in file of 'A-B-C D-E-F\\nG-H-I' yields [A,B,C,D,E,F]
-    def __init__(self, fpath, line2tokens, max_num_words=10):
+    def __init__(self, fpath, line2tokens, max_num_words=10, strict_cutoff=True):
         #TODO consider adding a 'min_context_size' parameter
         self.tokenize = line2tokens
-        self.max_num_words=max_num_words
+        self.max_num_words = max_num_words
+        self.strict_cutoff = strict_cutoff
         super().__init__(fpath)
 
     def subiter_fn(self, line):
         words = line.split()
         # use sliding window to constrain maximum context size
-        for subseq in SlidingWindow(words, self.max_num_words, self.max_num_words):
+        for subseq in SlidingWindow(words, self.max_num_words, 99999 if self.strict_cutoff else self.max_num_words):
             subseq = ' '.join(subseq)
             tokens = self.tokenize(subseq)
             yield tokens
