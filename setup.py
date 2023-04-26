@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="segmenters",
-    version="0.1.2",
+    version="0.1.3",
     author="Rastislav Hronsky",
     author_email="hronskyr@gmail.com",
     description="All kinds of segmenters",
