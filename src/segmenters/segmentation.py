@@ -1,21 +1,22 @@
 from itertools import combinations, product
+import itertools # TODO wtf
 from json import load
 import os
-from turtle import update
 #from multiprocessing.sharedctypes import Value
-import numpy as np
-from tokenizers import Tokenizer, SentencePieceBPETokenizer
-from tokenizers import models, normalizers, pre_tokenizers, decoders, trainers
-import morfessor
-from morfessor.baseline import NumMorphCorpusWeight, MorphLengthCorpusWeight
 import random
 import pickle
 from typing import List, Dict
 import collections
-import itertools
 import math
 import pkg_resources
+
+import numpy as np
 import pandas as pd
+
+from tokenizers import Tokenizer, SentencePieceBPETokenizer
+from tokenizers import models, normalizers, pre_tokenizers, decoders, trainers
+import morfessor
+from morfessor.baseline import NumMorphCorpusWeight, MorphLengthCorpusWeight
 
 def make_full_fname(fname):
     try:

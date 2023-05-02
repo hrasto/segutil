@@ -3,6 +3,7 @@ import itertools
 import collections
 import os
 import pickle 
+import iterator as it 
 
 """
 class Vocab():
@@ -109,17 +110,20 @@ class TextFileIterator:
 #def list_mirror(items):
 #    return dict(zip(items, np.arange(len(items))))
 
-class Vocab:
-    def __init__(self, tokens, last_token_unk=False):
-        types, counts = np.unique([t for t in tokens], return_counts=True)
-        self.idx_to_word = list(types)
-        self.idx_to_count = list(map(int, counts))
-        self.word_to_idx = {word: idx for idx, word in enumerate(self.idx_to_word)}
+default_unk_token = '<UNK>'
 
-        if last_token_unk:
+class Vocab:
+    def __init__(self, tokens=[], set_last_type_as_unk=False, dont_do_nothing=False):
+        if not dont_do_nothing: 
+            types, counts = np.unique([t for t in tokens], return_counts=True)
+            self.idx_to_word = list(types)
+            self.idx_to_count = list(map(int, counts))
+            self.word_to_idx = {word: idx for idx, word in enumerate(self.idx_to_word)}
+
+        if set_last_type_as_unk:
             self.unk_token = self.idx_to_word[-1]
         else:
-            self.unk_token = self.add_type('<UNK>')
+            self.unk_token = self.add_type(default_unk_token)
 
     def __len__(self):
         return len(self.idx_to_word)
@@ -190,17 +194,21 @@ class Vocab:
 
 class Corpus(Vocab):
     def __init__(self, idx_to_word, word_to_count, sequences, dirname=None):
-        super().__init__(idx_to_word, True)
+        """Initializes a corpus instance given a vocabulary and sequences. This constructor gets the metrics already prepared from the load/build function, so that vocab does not have to be recomputed every time we load a corpus.
+
+        Args:
+            idx_to_word (list): list of types
+            word_to_count (dict): type->count
+            sequences (iterable[iterable[int]]): encoded corpus (iterable of iterables of ints)
+            dirname (str, optional): Corpus directory. Defaults to None.
+        """
         self.dirname = dirname
-        self.word_to_count = word_to_count #word to count is without the UNK token!
+        self.idx_to_word = idx_to_word
+        self.word_to_count = word_to_count
         self.sequences = sequences
         self.in_memory = type(self.sequences) != str
         self.filehandle = None
-        counts = np.array(list(word_to_count.values()))
-        counts_rel = counts/counts.sum()
-        nll = -np.log(counts_rel)
-        self.word_to_nll = dict(zip(self.idx_to_word, nll))
-        self.iter_decoded = False
+        super().__init__(set_last_type_as_unk=True, dont_do_nothing=True) # assuming previously vocab was created such that last type was assigned as <unk> 
 
     def _parse_line(line):
         return [int(el) for el in line.strip().split()]
@@ -213,16 +221,23 @@ class Corpus(Vocab):
             self.iter = iter(self.sequences)
         return self
 
+    def iter_decoded(self):
+        return it.RestartableMapIterator(self, lambda sent: self.decode_sent(sent))
+
     def __next__(self):
         try:
-            if self.iter_decoded:
-                return self.decode_sent(next(self.iter))
-            else:
-                return next(self.iter)
+            return next(self.iter)
         except StopIteration:
             if self.filehandle is not None:
                 self.filehandle.close()
             raise StopIteration
+
+    def to_text(self, n=None):
+        if n is None: 
+            return '\n'.join([' '.join(line) for line in self.iter_decoded()])
+        elif type(n) == int:
+            return '\n'.join([' '.join(line) for _, line in zip(range(n), self.iter_decoded())])
+        raise TypeError("n must be a string or int")
 
     def _load(dirname, in_memory=True):
         with open(os.path.join(dirname, 'idx_to_word.pkl'), 'rb') as f:
@@ -239,18 +254,20 @@ class Corpus(Vocab):
     def load(dirname, in_memory=True):
         return Corpus(*Corpus._load(dirname, in_memory))
 
-    def _build(fpath, dirname, unk_token='<UNK>', in_memory=True):
+    def _build(fpath, dirname, unk_token=default_unk_token, in_memory=True):
         # create the destination for the corpus files
         if not os.path.isdir(dirname): os.mkdir(dirname)
 
         # iterators over the text
         #tfiter = TextFileIterator(filenames=[fpath])
         tfiter = TryFromFile(fpath)
-        itertokens = lambda: map(Corpus.split_line, tfiter)
-        itertokens_flat = lambda: itertools.chain.from_iterable(itertokens())
+        #itertokens = lambda: map(Corpus.split_line, tfiter)
+        itertokens = it.RestartableMapIterator(tfiter, Corpus.split_line)
 
         print("Building vocabulary...")
-        word_to_count = dict(collections.Counter(itertokens_flat()).most_common())
+        #itertokens_flat = lambda: itertools.chain.from_iterable(itertokens())
+        itertokens_flat = itertools.chain.from_iterable(itertokens)
+        word_to_count = dict(collections.Counter(itertokens_flat).most_common())
         idx_to_word = list(word_to_count.keys())
         idx_to_word.append(unk_token)
         word_to_idx = dict(zip(idx_to_word, np.arange(len(idx_to_word))))
@@ -265,7 +282,7 @@ class Corpus(Vocab):
         sequences_fpath = os.path.join(dirname, 'sequences.txt')
         sequences_fpath = os.path.abspath(sequences_fpath)
         with open(sequences_fpath, 'w') as f:
-            for tokens in itertokens():
+            for tokens in itertokens:
                 idx = [word_to_idx[token] for token in tokens]
                 if in_memory:
                     sequences.append(idx)
@@ -273,27 +290,11 @@ class Corpus(Vocab):
                 f.write(line)        
         return idx_to_word, word_to_count, sequences if in_memory else sequences_fpath, dirname
 
-    def build(fpath, dirname, unk_token='<UNK>', in_memory=True):
+    def build(fpath, dirname, unk_token=default_unk_token, in_memory=True):
         return Corpus(*Corpus._build(fpath, dirname, unk_token, in_memory))
 
     def split_line(line):
         return [subw for word in line.split() for subw in word.split('-')]
-
-    def vocab_dim(self):
-        """ includes the UNK """
-        return len(self.idx_to_word) 
-
-    def compute_nll(self):
-        nll_ttl = 0
-        for form, count, nll in zip(
-            self.idx_to_word, 
-            self.word_to_count.values(), 
-            self.word_to_nll.values()):
-            nll_ttl += count * nll
-        return nll_ttl
-
-    def n_tokens(self):
-        return sum(self.word_to_count.values())
 
 class InvalidSegmentation(Exception):
     pass
@@ -307,13 +308,19 @@ class StructuredCorpus(Corpus):
 
     def __getitem__(self, key):
         """ Returns an iterable of a segmentation with name 'key' """
-        sval = self.get_segmentation(key)
-        if sval is None:
-            sval = self._seg_fpath(key)
+        if type(key) == str: 
+            keys = [key]
+        elif type(key) == list: 
+            keys = key
+        else: 
+            raise TypeError('key must be a string or a list (of segmentation name(s))')
+
+        segmentations = [self.get_segmentation(key) for key in keys]
+        segmentations = [self._seg_fpath(key) if seg is None else seg for key, seg in zip(keys, segmentations)]
         # sval is now either a path to a segmentation or a segmentation in memory represented by a list
         return SegmentationAligner(
-            segmentation=sval, 
-            sequences=self.sequences)
+            segmentations=segmentations, 
+            sequences=self.sequences)               
 
     def get_segmentation_names(self):
         snames, _ = zip(*self.segmentations)
@@ -400,7 +407,7 @@ class StructuredCorpus(Corpus):
         except ValueError:
             self.segmentations.append((sname, slist if self.in_memory else None))
 
-    def build(fpath, dirname, unk_token='<UNK>', in_memory=True):
+    def build(fpath, dirname, unk_token=default_unk_token, in_memory=True):
         """ 'segmentations' is a list of tuples (sname, slist) where 'slist' is either a list of labels or list of lists of labels. """
         corpus_attributes = Corpus._build(fpath, dirname, unk_token, in_memory)
         corpus = StructuredCorpus(*corpus_attributes)
@@ -484,14 +491,24 @@ class TryFromIterable:
         return self.__next__()
 
 class SegmentationParser:
-    def __init__(self, segmentation):
-        self.segmentation = TryFromIterable(segmentation)
+    def __init__(self, segmentations):
+        self.segmentations = [TryFromIterable(segmentation) for segmentation in segmentations]
+        self.seg_iters = None
+
+    def do_next(self): 
+        assert self.seg_iters is not None
+        label, is_nested = zip(*[next(seg_iter) for seg_iter in self.seg_iters])
+        if len(set(is_nested)) > 1: 
+            raise Exception("cant combine per-line and per-word segmentations") # TODO do such that you can 
+        if len(label) == 1: 
+            label = label[0] # just make it a string if theres only one segmentation; else it will be a tuple of strings
+        return label, is_nested[0]
 
     def __iter__(self):
-        self.seg_iter = iter(self.segmentation)
-        self.reached_end=False
+        self.seg_iters = [iter(segmentation) for segmentation in self.segmentations]
+        self.reached_end = False
         try:
-            self.label_start, self.is_nested = next(self.seg_iter)
+            self.label_start, self.is_nested = self.do_next()
         except StopIteration:
             self.reached_end=True
         return self
@@ -504,7 +521,7 @@ class SegmentationParser:
         current_label = self.label_start
         while True:
             try:
-                self.label_start = next(self.seg_iter)[0]
+                self.label_start, _ = self.do_next()
                 if current_label == self.label_start:
                     n += 1
                     continue
@@ -515,8 +532,8 @@ class SegmentationParser:
         return n, current_label
 
 class SegmentationAligner:
-    def __init__(self, segmentation, sequences):
-        self.seg_parser = SegmentationParser(segmentation)
+    def __init__(self, segmentations, sequences):
+        self.seg_parser = SegmentationParser(segmentations)
         self.sequences = sequences
 
     def __iter__(self):
@@ -544,6 +561,7 @@ class SegmentationAligner:
         except StopIteration:
             raise InvalidSegmentation("segmentation and sequence are not aligned")
         return subseq, label
+
 """ Some tests:
 aligned = SegmentationAligner([1,1,2,2,2], [1,2,3,4,5])
 print(list(aligned))
