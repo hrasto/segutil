@@ -2,7 +2,7 @@ import numpy as np
 import itertools
 import collections
 import os
-import pickle 
+import pickle
 import iterator as it 
 
 """
@@ -310,10 +310,11 @@ class StructuredCorpus(Corpus):
         """ Returns an iterable of a segmentation with name 'key' """
         if type(key) == str: 
             keys = [key]
-        elif type(key) == list: 
-            keys = key
         else: 
-            raise TypeError('key must be a string or a list (of segmentation name(s))')
+            try: 
+                keys = [_ for _ in key]
+            except: 
+                raise TypeError('key must be a string or an iterable (of segmentation name(s))')
 
         segmentations = [self.get_segmentation(key) for key in keys]
         segmentations = [self._seg_fpath(key) if seg is None else seg for key, seg in zip(keys, segmentations)]
@@ -347,7 +348,7 @@ class StructuredCorpus(Corpus):
 
     def load_segmentations(self):
         seg_fpaths = os.listdir(self._seg_dir())
-        snames = [fpath.split('/')[-1].split('.')[0] for fpath in seg_fpaths]
+        snames = [fpath.split('/')[-1].split('.')[0] for fpath in seg_fpaths if fpath[0] != '.' and fpath.split('.')[-1] == 'txt']
         for sname in snames:
             try:
                 self.get_segmentation(sname)
@@ -423,6 +424,20 @@ class StructuredCorpus(Corpus):
         corpus.load_segmentations()
         return corpus
 
+    def derive_segment_boundaries(self, sname_coarse, sname_fine):
+        ### Yields (boundary!) indices of sname_coarse with respect to sname_fine. Useful to preserve segmentation info when transforming/summarizing the data under the fine segmentation. ###
+        aligner_coarse = self[sname_coarse]
+        aligner_fine = self[[sname_coarse, sname_fine]] # use both to ensure all segment boundaries in the coarse one are also in the fine one
+        iter_fine = iter(aligner_fine)
+        last_boundary = None
+        for segment_coarse in aligner_coarse:
+            # count how many fine segments until an equal chunk with segment_coarse is reached
+            chunk = []
+            while chunk != segment_coarse: 
+                chunk.append(next(iter_fine))
+            boundary = len(chunk) - 1 if last_boundary is None else last_boundary + len(chunk)
+            yield boundary            
+
 class TryFromFile:
     def __init__(self, iterable):
         self.iterable = iterable
@@ -451,7 +466,6 @@ class TryFromIterable:
         self.iterable = TryFromFile(iterable)
 
     def readline(line):
-        singlify = lambda vals: vals[0] if len(vals) == 1 else vals
         if type(line) == int:
             return line
         
@@ -490,25 +504,66 @@ class TryFromIterable:
         # if code reaches here, self.sub_iter is an iterator
         return self.__next__()
 
-class SegmentationParser:
-    def __init__(self, segmentations):
-        self.segmentations = [TryFromIterable(segmentation) for segmentation in segmentations]
-        self.seg_iters = None
+def expand_to(x, n):
+    for _ in range(n): 
+        yield x
 
-    def do_next(self): 
-        assert self.seg_iters is not None
-        label, is_nested = zip(*[next(seg_iter) for seg_iter in self.seg_iters])
-        if len(set(is_nested)) > 1: 
-            raise Exception("cant combine per-line and per-word segmentations") # TODO do such that you can 
-        if len(label) == 1: 
-            label = label[0] # just make it a string if theres only one segmentation; else it will be a tuple of strings
-        return label, is_nested[0]
+def is_at_least_one_nested(fnames_or_iterables, check_first_n_lines=10):
+    for fi in fnames_or_iterables: 
+        for _, raw_line in zip(range(check_first_n_lines), TryFromFile(fi)): 
+            parsed_line = TryFromIterable.readline(raw_line)
+            if type(parsed_line) == list: 
+                return True
+    return False
+
+class SegmentationExpander:
+    def __init__(self, fnames_or_iterables) -> None:
+        self.is_nested = is_at_least_one_nested(fnames_or_iterables)
+        self.fnames_or_iterables = fnames_or_iterables
 
     def __iter__(self):
-        self.seg_iters = [iter(segmentation) for segmentation in self.segmentations]
+        self.per_line_iter = [iter(TryFromFile(fi)) for fi in self.fnames_or_iterables]
+        return self
+
+    def __next__(self): 
+        lines = []
+        for pli in self.per_line_iter:
+            line = next(pli)
+            line_parsed = TryFromIterable.readline(line)
+            lines.append(line_parsed)
+
+        line_lens = [len(line) for line in lines if type(line)==list]
+        if len(line_lens) > 0: 
+            # need to expand
+            if len(set(line_lens)) > 1: 
+                raise Exception("segmentations arent aligned!")
+            max_len = max(line_lens)
+            expanded = [line if type(line) == list else list(expand_to(line, max_len)) for line in lines]
+            return expanded
+        else: 
+            return tuple(lines)
+
+class SegmentationParser:
+    def __init__(self, segmentations):
+        #self.segmentations = [TryFromIterable(segmentation) for segmentation in segmentations]
+        expanded = SegmentationExpander(segmentations)
+        self.is_nested = expanded.is_nested
+        if self.is_nested: 
+            fn = lambda labelset: list(zip(*labelset))
+            self.segmentation = it.RestartableMapIterator(expanded, fn)
+        else: 
+            self.segmentation = expanded
+        self.iter = None
+
+    def __iter__(self):
+        if self.is_nested: 
+            # iterate over flattened version
+            self.iter = iter(itertools.chain.from_iterable(self.segmentation))
+        else: 
+            self.iter = iter(self.segmentation)
         self.reached_end = False
         try:
-            self.label_start, self.is_nested = self.do_next()
+            self.labels_start = next(self.iter)
         except StopIteration:
             self.reached_end=True
         return self
@@ -518,17 +573,19 @@ class SegmentationParser:
             raise StopIteration()
         # read labels until label changes
         n = 1
-        current_label = self.label_start
+        current_label = self.labels_start
         while True:
             try:
-                self.label_start, _ = self.do_next()
-                if current_label == self.label_start:
+                self.labels_start = next(self.iter)
+                if current_label == self.labels_start:
                     n += 1
                     continue
                 break                    
             except StopIteration:
                 self.reached_end = True
                 break
+
+        current_label = current_label if len(current_label) > 1 else current_label[0]
         return n, current_label
 
 class SegmentationAligner:
@@ -538,8 +595,7 @@ class SegmentationAligner:
 
     def __iter__(self):
         self.seg_iter = iter(self.seg_parser)
-        self.whole_lines = not self.seg_iter.is_nested
-        if self.whole_lines:
+        if not self.seg_iter.is_nested:
             self.seq_iter = iter(map(TryFromIterable.readline, TryFromFile(self.sequences)))
         else:
             self.seq_iter = iter(TryFromIterable(self.sequences))
@@ -550,7 +606,7 @@ class SegmentationAligner:
         try:
             subseq = []
             for _ in range(n):
-                if self.whole_lines:
+                if not self.seg_parser.is_nested:
                     val = next(self.seq_iter)
                     if type(val) == list:
                         subseq += val
