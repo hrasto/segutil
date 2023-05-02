@@ -430,13 +430,19 @@ class StructuredCorpus(Corpus):
         aligner_fine = self[[sname_coarse, sname_fine]] # use both to ensure all segment boundaries in the coarse one are also in the fine one
         iter_fine = iter(aligner_fine)
         last_boundary = None
-        for segment_coarse in aligner_coarse:
+        for segment_coarse, label_coarse in aligner_coarse:
             # count how many fine segments until an equal chunk with segment_coarse is reached
+            if last_boundary is not None: 
+                yield last_boundary
             chunk = []
+            counter = 0
             while chunk != segment_coarse: 
-                chunk.append(next(iter_fine))
-            boundary = len(chunk) - 1 if last_boundary is None else last_boundary + len(chunk)
-            yield boundary            
+                counter += 1
+                segment_fine, label_fine = next(iter_fine)
+                chunk += segment_fine
+
+            boundary = counter - 1 if last_boundary is None else last_boundary + counter
+            last_boundary = boundary 
 
 class TryFromFile:
     def __init__(self, iterable):
