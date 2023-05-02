@@ -5,54 +5,6 @@ import os
 import pickle
 import iterator as it 
 
-"""
-class Vocab():
-    def __init__(self, sentences, add_special_tokens=True):
-        self.counter = collections.Counter(itertools.chain.from_iterable(sentences))
-        #distinct_words = set()
-        #for sentence in sentences:
-        #    sent_list = [word for word in sentence] # if sentence was a string (not a list) convert it to a list
-        #    distinct_words = distinct_words.union(sent_list)
-        self.idx_to_word = list(sorted(self.counter.keys()))
-        self.size = len(self.idx_to_word)
-        self.word_to_idx = dict(zip(self.idx_to_word, np.arange(self.size)))
-        self.special_tokens=add_special_tokens
-        if self.special_tokens:
-            self.w_unk = self.size; self.idx_to_word.append('<UNK>')
-            self.w_mask = self.size+1; self.idx_to_word.append('<MASK>')
-            self.w_start = self.size+2; self.idx_to_word.append('<START>')
-            self.w_end = self.size+3; self.idx_to_word.append('<END>')
-
-    def __len__(self):
-        if self.special_tokens:
-            return self.size+4
-        else:
-            return self.size
-
-    def to_idx(self, sequences_words, special_tokens=True):
-        if self.special_tokens and special_tokens:
-            return [
-                ([self.w_start]+[self.word_to_idx.get(w, self.w_unk) for w in seq]+[self.w_end])
-                for seq in sequences_words]
-        else:
-            return [
-                [self.word_to_idx[w] for w in seq if w in self.word_to_idx] 
-                for seq in sequences_words]
-
-    def to_words(self, sequences_idx):
-        return [[self.idx_to_word[idx] for idx in seq] for seq in sequences_idx]
-
-    def to_idx_masked(self, sequence_idx, return_masked=False):
-        idx = [sequence_idx for i in range(len(sequence_idx))]
-        idx = np.array(idx)
-        masked = idx[np.diag_indices_from(idx)]
-        idx[np.diag_indices_from(idx)] = self.w_mask
-        if return_masked:
-            return idx, masked
-        else:
-            return idx
-"""
-
 class NoMoreCorpusFiles(Exception):
     pass
 
@@ -432,7 +384,7 @@ class StructuredCorpus(Corpus):
         last_boundary = None
         for segment_coarse, label_coarse in aligner_coarse:
             # count how many fine segments until an equal chunk with segment_coarse is reached
-            if last_boundary is not None: 
+            if last_boundary is not None: # yield with iteration delay, so that the last boundary (end of corpus) is implicit
                 yield last_boundary
             chunk = []
             counter = 0
