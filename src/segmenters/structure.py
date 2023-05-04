@@ -376,10 +376,23 @@ class StructuredCorpus(Corpus):
         corpus.load_segmentations()
         return corpus
 
+    def combine_key(key1, key2):
+        key = []
+        if hasattr(key1, '__iter__'):
+            key += key1
+        else: 
+            key.append(key1)
+        if hasattr(key2, '__iter__'):
+            key += key2
+        else: 
+            key.append(key2)
+        return key
+
     def derive_segment_boundaries(self, sname_coarse, sname_fine):
         ### Yields (boundary!) indices of sname_coarse with respect to sname_fine. Useful to preserve segmentation info when transforming/summarizing the data under the fine segmentation. ###
         aligner_coarse = self[sname_coarse]
-        aligner_fine = self[[sname_coarse, sname_fine]] # use both to ensure all segment boundaries in the coarse one are also in the fine one
+        sname_combined = StructuredCorpus.combine_key(sname_coarse, sname_fine)
+        aligner_fine = self[sname_combined] # use both to ensure all segment boundaries in the coarse one are also in the fine one
         iter_fine = iter(aligner_fine)
         last_boundary = None
         for segment_coarse, label_coarse in aligner_coarse:
