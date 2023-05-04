@@ -1,7 +1,8 @@
+from typing import Type
 import numpy as np
 import itertools
 import collections
-import os
+import os, sys
 import pickle
 import iterator as it 
 
@@ -259,21 +260,36 @@ class StructuredCorpus(Corpus):
             os.mkdir(self._seg_dir())
 
     def __getitem__(self, key):
-        """ Returns an iterable of a segmentation with name 'key' """
-        if type(key) == str: 
-            keys = [key]
-        else: 
-            try: 
-                keys = [_ for _ in key]
-            except: 
-                raise TypeError('key must be a string or an iterable (of segmentation name(s))')
+        """Returns an iterable of a segmentation with name 'key' if key is string, or a union of segmentations if key is iterable.
 
-        segmentations = [self.get_segmentation(key) for key in keys]
-        segmentations = [self._seg_fpath(key) if seg is None else seg for key, seg in zip(keys, segmentations)]
+        Args:
+            key (str|list[str]): string or list of strings of keys. 
+
+        Raises:
+            TypeError: If key is an idiot
+
+        Returns:
+            SegmentationAligner: iterable yielding tuples of (segment, label) where segment is a list of tokens
+        """
+        if key is None: 
+            segmentations = [range(sys.maxsize)]
+            sequences = itertools.chain.from_iterable(self.sequences) # 
+        else:
+            if type(key) == str: 
+                keys = [key]
+            else: 
+                try: 
+                    keys = [_ for _ in key]
+                except: 
+                    raise TypeError('key must be a string or an iterable (of segmentation name(s))')
+            segmentations = [self.get_segmentation(key) for key in keys]
+            segmentations = [self._seg_fpath(key) if seg is None else seg for key, seg in zip(keys, segmentations)]
+            sequences = self.sequences
+
         # sval is now either a path to a segmentation or a segmentation in memory represented by a list
         return SegmentationAligner(
             segmentations=segmentations, 
-            sequences=self.sequences)               
+            sequences=sequences)               
 
     def get_segmentation_names(self):
         snames, _ = zip(*self.segmentations)
@@ -378,14 +394,20 @@ class StructuredCorpus(Corpus):
 
     def combine_key(key1, key2):
         key = []
-        if hasattr(key1, '__iter__'):
-            key += key1
-        else: 
+
+        if type(key1) == str or key1 is None:
             key.append(key1)
-        if hasattr(key2, '__iter__'):
-            key += key2
-        else: 
+        elif hasattr(key1, '__iter__'): 
+            key += key1
+
+        if type(key2) == str or key2 is None:
             key.append(key2)
+        elif hasattr(key2, '__iter__'): 
+            key += key2
+        
+        for k in key: 
+            if k is None: return None
+
         return key
 
     def derive_segment_boundaries(self, sname_coarse, sname_fine=None):
@@ -419,19 +441,27 @@ class StructuredCorpus(Corpus):
 
 class TryFromFile:
     def __init__(self, iterable):
+        self.is_file = False
+        if hasattr(iterable, '__iter__'): 
+            pass # list/iterable, but not a string
+        elif type(iterable)==str:
+            if os.path.isfile(iterable):
+                self.is_file = True
+            else: 
+                raise FileNotFoundError("must provide a valid file path to the iterable")
+        else: 
+            raise TypeError('argument iterable must be an iterable or a string containing a path to an existing text file')
         self.iterable = iterable
-        if not self.in_memory() and not os.path.isfile(iterable):
-            raise FileNotFoundError("must provide a valid file path to the iterable")
-    def in_memory(self):
-        return type(self.iterable)==list
+
     def __iter__(self):
-        if not self.in_memory():
+        if self.is_file:
             self.file = open(self.iterable, 'r')
             self.iter = iter(map(str.strip, self.file))
         else:
             self.file = None
             self.iter = iter(self.iterable)
         return self
+
     def __next__(self):
         try:
             return next(self.iter)
@@ -582,26 +612,29 @@ class SegmentationAligner:
         
     def __next__(self):
         n, label = next(self.seg_iter)
-        try:
-            subseq = []
-            for _ in range(n):
-                if not self.seg_parser.is_nested:
-                    val = next(self.seq_iter)
-                    if type(val) == list:
-                        subseq += val
-                    else:
-                        subseq.append(val)
+        #try:
+        subseq = []
+        for _ in range(n):
+            if not self.seg_parser.is_nested:
+                val = next(self.seq_iter)
+                if type(val) == list:
+                    subseq += val
                 else:
-                    subseq.append(next(self.seq_iter)[0])
-        except StopIteration:
-            raise InvalidSegmentation("segmentation and sequence are not aligned")
+                    subseq.append(val)
+            else:
+                subseq.append(next(self.seq_iter)[0])
+        #except StopIteration:
+        #    raise InvalidSegmentation("segmentation and sequence are not aligned")
         return subseq, label
 
-""" Some tests:
+""" Some tests: 
 aligned = SegmentationAligner([1,1,2,2,2], [1,2,3,4,5])
 print(list(aligned))
-aligned = SegmentationAligner(sequences=[[1,2,1,2,1], [3,4,3], [6,7,6,7]], segmentation=[1,2,3])
+aligned = SegmentationAligner(sequences=[[1,2,1,2,1], [3,4,3], [6,7,6,7]], segmentations=[range(sys.maxsize)])
 print(list(aligned))
+
+c = StructuredCorpus.load('../corpora_myformat/test_structured')
+print(list(c.derive_segment_boundaries('enum', None)))
 aligned = SegmentationAligner(sequences=[[1,2,1,2,1], [3,4,3], [6,7,6,7]], segmentation=[1,2])
 print(list(aligned))
 aligned = SegmentationAligner(
