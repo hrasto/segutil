@@ -303,7 +303,7 @@ class StructuredCorpus(Corpus):
         snames = [fpath.split('/')[-1].split('.')[0] for fpath in seg_fpaths if fpath[0] != '.' and fpath.split('.')[-1] == 'txt']
         for sname in snames:
             try:
-                self.get_segmentation(sname)
+                self.get_segmentation(sname) # skip if seg already loaded 
                 continue
             except KeyError:
                 pass
@@ -388,8 +388,16 @@ class StructuredCorpus(Corpus):
             key.append(key2)
         return key
 
-    def derive_segment_boundaries(self, sname_coarse, sname_fine):
-        ### Yields (boundary!) indices of sname_coarse with respect to sname_fine. Useful to preserve segmentation info when transforming/summarizing the data under the fine segmentation. ###
+    def derive_segment_boundaries(self, sname_coarse, sname_fine=None):
+        """Yields (boundary) indices of sname_coarse with respect to sname_fine. Useful to preserve segmentation info when transforming/summarizing the data under the fine segmentation.
+
+        Args:
+            sname_coarse (str|list[str]): Name/key(s) of the coarse segmentation.
+            sname_fine (str|list[str], optional): Name/key(s) of the fine segmentation. If none, then original tokens will be used. Defaults to None.
+
+        Yields:
+            _type_: _description_
+        """
         aligner_coarse = self[sname_coarse]
         sname_combined = StructuredCorpus.combine_key(sname_coarse, sname_fine)
         aligner_fine = self[sname_combined] # use both to ensure all segment boundaries in the coarse one are also in the fine one
