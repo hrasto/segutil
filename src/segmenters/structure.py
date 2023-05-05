@@ -1,4 +1,5 @@
-from typing import Type
+from ctypes import Union
+from typing import Iterator, List, Type
 import numpy as np
 import itertools
 import collections
@@ -259,11 +260,11 @@ class StructuredCorpus(Corpus):
         if not os.path.isdir(self._seg_dir()):
             os.mkdir(self._seg_dir())
 
-    def __getitem__(self, key):
+    def __getitem__(self, keys):
         """Returns an iterable of a segmentation with name 'key' if key is string, or a union of segmentations if key is iterable.
 
         Args:
-            key (str|list[str]): string or list of strings of keys. 
+            key (Union[str, List[str]]): string or list of strings of keys. 
 
         Raises:
             TypeError: If key is an idiot
@@ -271,15 +272,15 @@ class StructuredCorpus(Corpus):
         Returns:
             SegmentationAligner: iterable yielding tuples of (segment, label) where segment is a list of tokens
         """
-        if key is None: 
+        if keys is None: 
             segmentations = [range(sys.maxsize)]
-            sequences = itertools.chain.from_iterable(self.sequences) # 
+            sequences = itertools.chain.from_iterable(self.sequences)
         else:
-            if type(key) == str: 
-                keys = [key]
+            if type(keys) == str: 
+                keys = [keys]
             else: 
                 try: 
-                    keys = [_ for _ in key]
+                    keys = [_ for _ in keys]
                 except: 
                     raise TypeError('key must be a string or an iterable (of segmentation name(s))')
             segmentations = [self.get_segmentation(key) for key in keys]
@@ -289,7 +290,10 @@ class StructuredCorpus(Corpus):
         # sval is now either a path to a segmentation or a segmentation in memory represented by a list
         return SegmentationAligner(
             segmentations=segmentations, 
-            sequences=sequences)               
+            sequences=sequences)             
+
+    def iter_flat(self):
+        return itertools.chain.from_iterable(self.sequences)
 
     def get_segmentation_names(self):
         snames, _ = zip(*self.segmentations)
@@ -630,6 +634,10 @@ class SegmentationAligner:
 """ Some tests: 
 aligned = SegmentationAligner([1,1,2,2,2], [1,2,3,4,5])
 print(list(aligned))
+"""
+"""
+c = StructuredCorpus.load('../corpora_myformat/test_structured')
+print(list(c.iter_flat()))
 aligned = SegmentationAligner(sequences=[[1,2,1,2,1], [3,4,3], [6,7,6,7]], segmentations=[range(sys.maxsize)])
 print(list(aligned))
 
