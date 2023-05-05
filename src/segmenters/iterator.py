@@ -1,5 +1,6 @@
 from collections import deque
 import os
+from typing import Iterator
 
 class RestartableMapIterator:
     def __init__(self, iterable, fn):
@@ -28,6 +29,25 @@ class RestartableBatchIterator:
         return self
     def __next__(self):
         return next(self.iter)
+
+class RestartableFlattenIterator:
+    def __init__(self, iterable: Iterator):
+        self.iterable = iterable
+    def __iter__(self):
+        self.iter=iter(self.iterable)
+        self.sub_iter=None
+        return self
+    def __next__(self):
+        if self.sub_iter is not None:
+            try: return next(self.sub_iter)
+            except StopIteration: pass
+        try: 
+            self.sub_iter = iter(next(self.iter))
+            # if code reaches here, self.sub_iter is an iterator
+            return self.__next__()
+        except StopIteration: 
+            # main iterable was consumed, we're done
+            raise StopIteration()
 
 class FileReader:
     def __init__(self, fpath):

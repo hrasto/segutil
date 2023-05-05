@@ -1,11 +1,13 @@
-from ctypes import Union
-from typing import Iterator, List, Type
+from typing import Iterator, List, Type, Union
 import numpy as np
 import itertools
 import collections
 import os, sys
 import pickle
-import segmenters.iterator as it 
+try: 
+    from . import iterator as it
+except ImportError: 
+    import iterator as it
 
 class NoMoreCorpusFiles(Exception):
     pass
@@ -274,7 +276,7 @@ class StructuredCorpus(Corpus):
         """
         if keys is None: 
             segmentations = [range(sys.maxsize)]
-            sequences = itertools.chain.from_iterable(self.sequences)
+            sequences = it.RestartableFlattenIterator(self.sequences)
         else:
             if type(keys) == str: 
                 keys = [keys]
@@ -292,8 +294,9 @@ class StructuredCorpus(Corpus):
             segmentations=segmentations, 
             sequences=sequences)             
 
-    def iter_flat(self):
-        return itertools.chain.from_iterable(self.sequences)
+    def iter_flat(self) -> Iterator:
+        # return a restartable iterator
+        return it.RestartableMapIterator(self[None], lambda x: x[0]) 
 
     def get_segmentation_names(self):
         snames, _ = zip(*self.segmentations)
@@ -637,7 +640,10 @@ print(list(aligned))
 """
 """
 c = StructuredCorpus.load('../corpora_myformat/test_structured')
-print(list(c.iter_flat()))
+iterator = c[None]
+
+print(list(iterator))
+print(list(iterator))
 aligned = SegmentationAligner(sequences=[[1,2,1,2,1], [3,4,3], [6,7,6,7]], segmentations=[range(sys.maxsize)])
 print(list(aligned))
 
