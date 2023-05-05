@@ -5,7 +5,7 @@ import itertools
 import collections
 import os, sys
 import pickle
-import iterator as it 
+import segmenters.iterator as it 
 
 class NoMoreCorpusFiles(Exception):
     pass
