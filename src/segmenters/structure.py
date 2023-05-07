@@ -1,4 +1,4 @@
-from typing import Iterator, List, Type, Union
+from typing import Iterator, List, Type, Union, Dict
 import numpy as np
 import itertools
 import collections
@@ -69,7 +69,7 @@ class TextFileIterator:
 default_unk_token = '<UNK>'
 
 class Vocab:
-    def __init__(self, tokens=[], set_last_type_as_unk=False, dont_do_nothing=False):
+    def __init__(self, tokens:List=[], set_last_type_as_unk:bool=False, dont_do_nothing:bool=False):
         if not dont_do_nothing: 
             types, counts = np.unique([t for t in tokens], return_counts=True)
             self.idx_to_word = list(types)
@@ -149,7 +149,7 @@ class Vocab:
         return res
 
 class Corpus(Vocab):
-    def __init__(self, idx_to_word, word_to_count, sequences, dirname=None):
+    def __init__(self, idx_to_word:List, word_to_count:Dict, sequences:Iterator, dirname:str=None):
         """Initializes a corpus instance given a vocabulary and sequences. This constructor gets the metrics already prepared from the load/build function, so that vocab does not have to be recomputed every time we load a corpus.
 
         Args:
@@ -256,7 +256,7 @@ class InvalidSegmentation(Exception):
     pass
 
 class StructuredCorpus(Corpus):
-    def __init__(self, idx_to_word, word_to_count, sequences, dirname=None):
+    def __init__(self, idx_to_word:List, word_to_count:Dict, sequences:Iterator, dirname:str=None):
         super().__init__(idx_to_word, word_to_count, sequences, dirname)
         self.segmentations = []
         if not os.path.isdir(self._seg_dir()):
