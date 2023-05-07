@@ -449,9 +449,9 @@ class StructuredCorpus(Corpus):
             last_boundary = boundary 
 
 class TryFromFile:
-    def __init__(self, iterable):
+    def __init__(self, iterable: Union[Iterator, str]):
         self.is_file = False
-        if hasattr(iterable, '__iter__'): 
+        if hasattr(iterable, '__iter__') and type(iterable) != str: 
             pass # list/iterable, but not a string
         elif type(iterable)==str:
             if os.path.isfile(iterable):
@@ -640,6 +640,24 @@ class SegmentationAligner:
 aligned = SegmentationAligner([1,1,2,2,2], [1,2,3,4,5])
 print(list(aligned))
 """
+import random
+
+corpus_name='010101'
+segment_len=8
+n_segments=100
+# create dataset
+#segmentation = [seg_i for seg_i in range(n_segments) for _ in range(segment_len)]
+seq1 = [random.randint(0, 3) for i in range(n_segments*segment_len//2)]
+seq2 = [random.randint(4, 7) for i in range(n_segments*segment_len-len(seq1))]
+seq = list(itertools.chain.from_iterable(zip(seq1, seq2)))
+
+fname = 'tmp.txt'
+with open(fname,'w') as f: 
+    for segment_i in range(n_segments):
+        f.write(' '.join(map(str, seq[segment_len*segment_i:segment_len*(segment_i+1)]))+'\n')
+corpus = Corpus.build(fname, dirname=corpus_name, in_memory=False)
+#os.remove(fname)
+
 """
 c = StructuredCorpus.load('../corpora_myformat/test_structured')
 iterator = c[None]
