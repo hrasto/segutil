@@ -640,6 +640,7 @@ class SegmentationAligner:
 aligned = SegmentationAligner([1,1,2,2,2], [1,2,3,4,5])
 print(list(aligned))
 """
+"""
 import random
 
 corpus_name='010101'
@@ -658,7 +659,6 @@ with open(fname,'w') as f:
 corpus = Corpus.build(fname, dirname=corpus_name, in_memory=False)
 #os.remove(fname)
 
-"""
 c = StructuredCorpus.load('../corpora_myformat/test_structured')
 iterator = c[None]
 
