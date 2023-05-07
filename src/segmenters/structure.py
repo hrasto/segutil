@@ -1,4 +1,4 @@
-from typing import Iterator, List, Type, Union, Dict
+from typing import Iterator, List, Type, Union, Dict, Tuple
 import numpy as np
 import itertools
 import collections
@@ -11,6 +11,8 @@ except ImportError:
 
 class NoMoreCorpusFiles(Exception):
     pass
+
+Key = Union[str, Iterator[str]]
 
 class TextFileIterator:
     def __init__(self, corpus_dir="", filenames=[]):
@@ -262,7 +264,7 @@ class StructuredCorpus(Corpus):
         if not os.path.isdir(self._seg_dir()):
             os.mkdir(self._seg_dir())
 
-    def __getitem__(self, keys):
+    def __getitem__(self, keys:Key):
         """Returns an iterable of a segmentation with name 'key' if key is string, or a union of segmentations if key is iterable.
 
         Args:
@@ -344,7 +346,7 @@ class StructuredCorpus(Corpus):
             self.add_segmentation((sname, sval))
         return self
 
-    def add_segmentation(self, seg, overwrite=False):
+    def add_segmentation(self, seg:Tuple[str, Iterator], overwrite:bool=False):
         try:
             sname, slist = seg
         except TypeError:
@@ -383,7 +385,7 @@ class StructuredCorpus(Corpus):
         except ValueError:
             self.segmentations.append((sname, slist if self.in_memory else None))
 
-    def build(fpath, dirname, unk_token=default_unk_token, in_memory=True):
+    def build(fpath:str, dirname:str, unk_token:str=default_unk_token, in_memory:bool=True):
         """ 'segmentations' is a list of tuples (sname, slist) where 'slist' is either a list of labels or list of lists of labels. """
         corpus_attributes = Corpus._build(fpath, dirname, unk_token, in_memory)
         corpus = StructuredCorpus(*corpus_attributes)
@@ -393,13 +395,13 @@ class StructuredCorpus(Corpus):
             corpus.add_segmentation(seg, overwrite=True)
         return corpus
 
-    def load(dirname, in_memory=True):
+    def load(dirname:str, in_memory:bool=True):
         corpus_attributes = Corpus._load(dirname, in_memory)
         corpus = StructuredCorpus(*corpus_attributes)
         corpus.load_segmentations()
         return corpus
 
-    def combine_key(key1, key2):
+    def combine_key(key1:Key, key2:Key):
         key = []
 
         if type(key1) == str or key1 is None:
@@ -417,7 +419,7 @@ class StructuredCorpus(Corpus):
 
         return key
 
-    def derive_segment_boundaries(self, sname_coarse, sname_fine=None):
+    def derive_segment_boundaries(self, sname_coarse:Key, sname_fine:Key=None):
         """Yields (boundary) indices of sname_coarse with respect to sname_fine. Useful to preserve segmentation info when transforming/summarizing the data under the fine segmentation.
 
         Args:
