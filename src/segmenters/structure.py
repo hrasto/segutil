@@ -649,13 +649,13 @@ class SegmentationAligner:
 """ Some tests: 
 aligned = SegmentationAligner([1,1,2,2,2], [1,2,3,4,5])
 print(list(aligned))
-"""
 tmp = 'tmp.txt'
 dirname = 'applejuice'
 #corpus = StructuredCorpus.build(tmp, dirname)
 corpus = StructuredCorpus.load(dirname)
 #print(list(corpus.derive_segment_boundaries('default')))
 print(list(corpus.decode_segmented('default')))
+"""
 
 """
 import random
