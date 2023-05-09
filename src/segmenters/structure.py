@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Iterator, List, Type, Union, Dict, Tuple
 import numpy as np
 import itertools
@@ -295,7 +296,15 @@ class StructuredCorpus(Corpus):
         # sval is now either a path to a segmentation or a segmentation in memory represented by a list
         return SegmentationAligner(
             segmentations=segmentations, 
-            sequences=sequences)             
+            sequences=sequences)         
+
+    def decode_segmented(self, sname: Key) -> List[Tuple[str, str]]:
+        seg_aligner = self[sname]
+        res = []
+        for idx, label in seg_aligner: 
+            sent = self.decode_sent(idx, True)
+            res.append((sent, label))
+        return res
 
     def iter_flat(self) -> Iterator:
         # return a restartable iterator
@@ -641,12 +650,14 @@ class SegmentationAligner:
 aligned = SegmentationAligner([1,1,2,2,2], [1,2,3,4,5])
 print(list(aligned))
 """
-"""
 tmp = 'tmp.txt'
 dirname = 'applejuice'
-corpus = StructuredCorpus.build(tmp, dirname)
-print(list(corpus.derive_segment_boundaries('default')))
+#corpus = StructuredCorpus.build(tmp, dirname)
+corpus = StructuredCorpus.load(dirname)
+#print(list(corpus.derive_segment_boundaries('default')))
+print(list(corpus.decode_segmented('default')))
 
+"""
 import random
 
 corpus_name='010101'
