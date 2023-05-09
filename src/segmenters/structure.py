@@ -228,7 +228,7 @@ class Corpus(Vocab):
         word_to_count = dict(collections.Counter(itertokens_flat).most_common())
         idx_to_word = list(word_to_count.keys())
         idx_to_word.append(unk_token)
-        word_to_idx = dict(zip(idx_to_word, np.arange(len(idx_to_word))))
+        word_to_idx = dict(zip(idx_to_word, range(len(idx_to_word))))
 
         with open(os.path.join(dirname, 'idx_to_word.pkl'), 'wb') as f:
             pickle.dump(idx_to_word, f)
@@ -641,6 +641,11 @@ aligned = SegmentationAligner([1,1,2,2,2], [1,2,3,4,5])
 print(list(aligned))
 """
 """
+tmp = 'tmp.txt'
+dirname = 'applejuice'
+corpus = StructuredCorpus.build(tmp, dirname)
+print(list(corpus.derive_segment_boundaries('default')))
+
 import random
 
 corpus_name='010101'
