@@ -76,7 +76,8 @@ class Vocab:
             types, counts = np.unique([t for t in tokens], return_counts=True)
             self.idx_to_word = list(types)
             self.idx_to_count = list(map(int, counts))
-            self.word_to_idx = {word: idx for idx, word in enumerate(self.idx_to_word)}
+            
+        self.word_to_idx = {word: idx for idx, word in enumerate(self.idx_to_word)}
 
         if set_last_type_as_unk:
             self.unk_token = self.idx_to_word[-1]
