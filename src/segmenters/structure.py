@@ -214,7 +214,7 @@ class Corpus(Vocab):
     def load(dirname, in_memory=True):
         return Corpus(*Corpus._load(dirname, in_memory))
 
-    def _build(fpath, dirname, unk_token=default_unk_token, in_memory=True):
+    def _build(fpath, dirname, unk_token=default_unk_token, in_memory=True, extra_tokens:List[str]=[]):
         # create the destination for the corpus files
         if not os.path.isdir(dirname): os.mkdir(dirname)
 
@@ -230,6 +230,9 @@ class Corpus(Vocab):
         word_to_count = dict(collections.Counter(itertokens_flat).most_common())
         idx_to_word = list(word_to_count.keys())
         idx_to_word.append(unk_token)
+        for token in extra_tokens:
+            if token not in idx_to_word:
+                idx_to_word.append(token)
         word_to_idx = dict(zip(idx_to_word, range(len(idx_to_word))))
 
         with open(os.path.join(dirname, 'idx_to_word.pkl'), 'wb') as f:
@@ -250,8 +253,8 @@ class Corpus(Vocab):
                 f.write(line)        
         return idx_to_word, word_to_count, sequences if in_memory else sequences_fpath, dirname
 
-    def build(fpath, dirname, unk_token=default_unk_token, in_memory=True):
-        return Corpus(*Corpus._build(fpath, dirname, unk_token, in_memory))
+    def build(fpath, dirname, unk_token=default_unk_token, in_memory=True, extra_tokens:List[str]=[]):
+        return Corpus(*Corpus._build(fpath, dirname, unk_token, in_memory, extra_tokens))
 
     def split_line(line):
         return [subw for word in line.split() for subw in word.split('-')]
@@ -395,9 +398,9 @@ class StructuredCorpus(Corpus):
         except ValueError:
             self.segmentations.append((sname, slist if self.in_memory else None))
 
-    def build(fpath:str, dirname:str, unk_token:str=default_unk_token, in_memory:bool=True):
+    def build(fpath:str, dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[]):
         """ 'segmentations' is a list of tuples (sname, slist) where 'slist' is either a list of labels or list of lists of labels. """
-        corpus_attributes = Corpus._build(fpath, dirname, unk_token, in_memory)
+        corpus_attributes = Corpus._build(fpath, dirname, unk_token, in_memory, extra_tokens)
         corpus = StructuredCorpus(*corpus_attributes)
         default_seg = [i for i, _ in enumerate(corpus)]
         segmentations = [('default', default_seg)]
