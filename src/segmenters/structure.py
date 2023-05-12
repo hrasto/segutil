@@ -372,8 +372,10 @@ class StructuredCorpus(Corpus):
             append = False
         except KeyError:
             pass
-        if len(slist) != len(self.sequences):
+        
+        if len(slist) != len(list(self)):
             raise InvalidSegmentation("length of the segmentation must match the length of the sequences")
+
         if type(sname) != str or len(sname)==0:
             sname = 'anonymous_segmentation'
         sfpath = self._seg_fpath(sname)
@@ -403,9 +405,7 @@ class StructuredCorpus(Corpus):
         corpus_attributes = Corpus._build(fpath, dirname, unk_token, in_memory, extra_tokens)
         corpus = StructuredCorpus(*corpus_attributes)
         default_seg = [i for i, _ in enumerate(corpus)]
-        segmentations = [('default', default_seg)]
-        for seg in segmentations:
-            corpus.add_segmentation(seg, overwrite=True)
+        corpus.add_segmentation(('default', default_seg), overwrite=True)
         return corpus
 
     def load(dirname:str, in_memory:bool=True):
