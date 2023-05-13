@@ -639,8 +639,19 @@ class SegmentationAligner:
     def __init__(self, segmentations, sequences):
         self.seg_parser = SegmentationParser(segmentations)
         self.sequences = sequences
+        self.max_n=-1
+        self.postprocess_fn=None
+
+    def first_n(self, n:int):
+        self.max_n=n
+        return self
+
+    def postprocess(self, fn):
+        self.postprocess_fn = fn
+        return self
 
     def __iter__(self):
+        self.i=0
         self.seg_iter = iter(self.seg_parser)
         if not self.seg_iter.is_nested:
             self.seq_iter = iter(map(TryFromIterable.readline, TryFromFile(self.sequences)))
@@ -649,20 +660,29 @@ class SegmentationAligner:
         return self
         
     def __next__(self):
+        if self.max_n != -1 and self.i == self.max_n:
+            self.max_n = -1
+            raise StopIteration()
+
         n, label = next(self.seg_iter)
-        #try:
-        subseq = []
-        for _ in range(n):
-            if not self.seg_parser.is_nested:
-                val = next(self.seq_iter)
-                if type(val) == list:
-                    subseq += val
+        try:
+            subseq = []
+            for _ in range(n):
+                if not self.seg_parser.is_nested:
+                    val = next(self.seq_iter)
+                    if type(val) == list:
+                        subseq += val
+                    else:
+                        subseq.append(val)
                 else:
-                    subseq.append(val)
-            else:
-                subseq.append(next(self.seq_iter)[0])
-        #except StopIteration:
-        #    raise InvalidSegmentation("segmentation and sequence are not aligned")
+                    subseq.append(next(self.seq_iter)[0])
+        except StopIteration:
+            #raise InvalidSegmentation("segmentation and sequence are not aligned")
+            self.max_n=-1
+            raise StopIteration()
+        self.i += 1 
+        if self.postprocess_fn is not None: 
+            subseq = self.postprocess_fn(subseq)
         return subseq, label
 
 """ Some tests: 
@@ -674,10 +694,12 @@ dirname = 'applejuice'
 corpus = StructuredCorpus.load(dirname)
 #print(list(corpus.derive_segment_boundaries('default')))
 print(list(corpus.decode_segmented('default')))
-"""
 fpath = '/Users/rastislavhronsky/ml-experiments/corpora_processed/child_proc_uniq_seg_CELEX_fbMFS_sub100.txt'
-dirname = 'child'
 corpus=StructuredCorpus.build(fpath, dirname, char_lvl=True)
+dirname = 'child'
+corpus=StructuredCorpus.load(dirname)
+print(list(corpus['word'].first_n(3).postprocess(lambda seq: ''.join(corpus.decode_sent(seq)))))
+"""
 """
 import random
 
