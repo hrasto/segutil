@@ -1,10 +1,13 @@
 from __future__ import annotations
+from posixpath import split
 from typing import Iterator, List, Type, Union, Dict, Tuple
 import numpy as np
 import itertools
 import collections
 import os, sys
 import pickle
+
+from segmenters.iterator import RestartableMapIterator
 try: 
     from . import iterator as it
 except ImportError: 
@@ -214,15 +217,15 @@ class Corpus(Vocab):
     def load(dirname, in_memory=True):
         return Corpus(*Corpus._load(dirname, in_memory))
 
-    def _build(fpath, dirname, unk_token=default_unk_token, in_memory=True, extra_tokens:List[str]=[]):
+    def _build(lines:Iterator, dirname:str, unk_token:str=default_unk_token, in_memory=True, extra_tokens:List[str]=[]):
         # create the destination for the corpus files
         if not os.path.isdir(dirname): os.mkdir(dirname)
 
         # iterators over the text
         #tfiter = TextFileIterator(filenames=[fpath])
-        tfiter = TryFromFile(fpath)
+        #tfiter = TryFromFile(fpath)
         #itertokens = lambda: map(Corpus.split_line, tfiter)
-        itertokens = it.RestartableMapIterator(tfiter, Corpus.split_line)
+        itertokens = it.RestartableMapIterator(lines, Corpus.split_line)
 
         print("Building vocabulary...")
         #itertokens_flat = lambda: itertools.chain.from_iterable(itertokens())
@@ -253,11 +256,12 @@ class Corpus(Vocab):
                 f.write(line)        
         return idx_to_word, word_to_count, sequences if in_memory else sequences_fpath, dirname
 
-    def build(fpath, dirname, unk_token=default_unk_token, in_memory=True, extra_tokens:List[str]=[]):
-        return Corpus(*Corpus._build(fpath, dirname, unk_token, in_memory, extra_tokens))
+    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[]):
+        lines = TryFromFile(fpath)
+        return Corpus(*Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens))
 
     def split_line(line):
-        return [subw for word in line.split() for subw in word.split('-')]
+        return [subw for words in line.split() for subw in words.split('|')[0].split('-')]
 
 class InvalidSegmentation(Exception):
     pass
@@ -373,18 +377,19 @@ class StructuredCorpus(Corpus):
         except KeyError:
             pass
         
-        if len(slist) != len(list(self)):
-            raise InvalidSegmentation("length of the segmentation must match the length of the sequences")
+        #if len(slist) != len(list(self)):
+        #    raise InvalidSegmentation("length of the segmentation must match the length of the sequences")
 
         if type(sname) != str or len(sname)==0:
             sname = 'anonymous_segmentation'
         sfpath = self._seg_fpath(sname)
         delete = False
+        first_entry = next(iter(slist))
         with open(sfpath, 'w') as f:
-            if type(slist[0]) in [int, str]:
+            if type(first_entry) in [int, str]:
                 for label in slist:
                     f.write(str(label) + '\n')
-            elif type(slist[0]) == list:
+            elif type(first_entry) == list:
                 for i, (labels, seq) in enumerate(zip(slist, self.sequences)):
                     if len(labels) != len(seq):
                         delete = True
@@ -400,12 +405,23 @@ class StructuredCorpus(Corpus):
         except ValueError:
             self.segmentations.append((sname, slist if self.in_memory else None))
 
-    def build(fpath:str, dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[]):
+    def build(fpath:str, dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], char_lvl:bool=False):
         """ 'segmentations' is a list of tuples (sname, slist) where 'slist' is either a list of labels or list of lists of labels. """
-        corpus_attributes = Corpus._build(fpath, dirname, unk_token, in_memory, extra_tokens)
+        lines = TryFromFile(fpath)
+        if char_lvl: 
+            reformat_line = lambda line: ' '.join([char for word in Corpus.split_line(line) for char in word])
+            lines = RestartableMapIterator(lines, reformat_line)
+
+        corpus_attributes = Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens)
         corpus = StructuredCorpus(*corpus_attributes)
         default_seg = [i for i, _ in enumerate(corpus)]
+
         corpus.add_segmentation(('default', default_seg), overwrite=True)
+        if char_lvl: 
+            lines = TryFromFile(fpath)
+            word_segs = lambda line: [i for i, word in enumerate(Corpus.split_line(line)) for _ in range(len(word))]
+            word_segmentation = RestartableMapIterator(lines, word_segs)
+            corpus.add_segmentation(('word', word_segmentation), overwrite=True)
         return corpus
 
     def load(dirname:str, in_memory:bool=True):
@@ -659,7 +675,9 @@ corpus = StructuredCorpus.load(dirname)
 #print(list(corpus.derive_segment_boundaries('default')))
 print(list(corpus.decode_segmented('default')))
 """
-
+fpath = '/Users/rastislavhronsky/ml-experiments/corpora_processed/child_proc_uniq_seg_CELEX_fbMFS_sub100.txt'
+dirname = 'child'
+corpus=StructuredCorpus.build(fpath, dirname, char_lvl=True)
 """
 import random
 
