@@ -286,6 +286,7 @@ class StructuredCorpus(Corpus):
         self.segmentations = []
         if not os.path.isdir(self._seg_dir()):
             os.mkdir(self._seg_dir())
+        self.postprocess=lambda x: x
 
     def __getitem__(self, keys:Key):
         """Returns an iterable of a segmentation with name 'key' if key is string, or a union of segmentations if key is iterable.
@@ -317,7 +318,7 @@ class StructuredCorpus(Corpus):
         # sval is now either a path to a segmentation or a segmentation in memory represented by a list
         return SegmentationAligner(
             segmentations=segmentations, 
-            sequences=sequences)         
+            sequences=sequences).postprocess(self.postprocess)
 
     def decode_segmented(self, sname: Key) -> List[Tuple[str, str]]:
         seg_aligner = self[sname]
