@@ -75,6 +75,10 @@ class TextFileIterator:
 default_unk_token = '<UNK>'
 
 class Vocab:
+    idx_to_word: List
+    idx_to_count: List
+    word_to_idx: dict
+
     def __init__(self, tokens:List=[], set_last_type_as_unk:bool=False, dont_do_nothing:bool=False):
         if not dont_do_nothing: 
             types, counts = np.unique([t for t in tokens], return_counts=True)
@@ -156,7 +160,12 @@ class Vocab:
         return res
 
 class Corpus(Vocab):
-    def __init__(self, idx_to_word:List, word_to_count:Dict, sequences:Iterator, dirname:str=None):
+    dirname: str
+    word_to_count: dict
+    in_memory: bool
+    sequences: Union[Iterator, str]
+
+    def __init__(self, idx_to_word:List, word_to_count:Dict, sequences:Union[Iterator, str], dirname:str=None):
         """Initializes a corpus instance given a vocabulary and sequences. This constructor gets the metrics already prepared from the load/build function, so that vocab does not have to be recomputed every time we load a corpus.
 
         Args:
@@ -254,8 +263,12 @@ class Corpus(Vocab):
                     sequences.append(idx)
                 line = ' '.join(map(str, idx)) + '\n'
                 f.write(line)        
-        return idx_to_word, word_to_count, sequences if in_memory else sequences_fpath, dirname
-
+        
+        if in_memory: 
+            return idx_to_word, word_to_count, sequences, dirname
+        else: 
+            return idx_to_word, word_to_count, sequences_fpath, dirname
+            
     def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[]):
         lines = TryFromFile(fpath)
         return Corpus(*Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens))
