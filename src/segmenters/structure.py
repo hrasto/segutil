@@ -177,6 +177,7 @@ class Corpus(Vocab):
         self.dirname = dirname
         self.idx_to_word = idx_to_word
         self.word_to_count = word_to_count
+        self.idx_to_count = [self.word_to_count[word] if word in self.word_to_count else 0 for word in self.idx_to_word]
         self.sequences = sequences
         self.in_memory = type(self.sequences) != str
         self.filehandle = None
@@ -268,7 +269,7 @@ class Corpus(Vocab):
             return idx_to_word, word_to_count, sequences, dirname
         else: 
             return idx_to_word, word_to_count, sequences_fpath, dirname
-            
+
     def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[]):
         lines = TryFromFile(fpath)
         return Corpus(*Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens))
