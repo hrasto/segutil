@@ -363,18 +363,23 @@ class StructuredCorpus(Corpus):
                 continue
             except KeyError:
                 pass
-            sval = None
+            slist = None
             if self.in_memory:
                 fpath = self._seg_fpath(sname)
-                sval = []
+                slist = []
                 with open(fpath, 'r') as f:
                     for line in f:
                         labels = line.strip().split()
                         if len(labels) == 1:
-                            sval.append(StructuredCorpus._read_label(labels[0]))
+                            slist.append(StructuredCorpus._read_label(labels[0]))
                         else:
-                            sval.append([StructuredCorpus._read_label(l) for l in labels])           
-            self.add_segmentation((sname, sval))
+                            slist.append([StructuredCorpus._read_label(l) for l in labels])           
+            #self.add_segmentation((sname, sval))
+            try:
+                idx = self.get_segmentation_names().index(sname)
+                self.segmentations[idx] = (sname, slist if self.in_memory else None)
+            except ValueError:
+                self.segmentations.append((sname, slist if self.in_memory else None))
         return self
 
     def add_segmentation(self, seg:Tuple[str, Iterator], overwrite:bool=False):
@@ -407,7 +412,7 @@ class StructuredCorpus(Corpus):
                 for i, (labels, seq) in enumerate(zip(slist, self.sequences)):
                     if len(labels) != len(seq):
                         delete = True
-                        raise InvalidSegmentation(f"length of segmentation does not match at line {i} ({len(seq)}!={len(labels)})")
+                        raise InvalidSegmentation(f"length of segmentation '{sname}' does not match at line {i} ({len(seq)}!={len(labels)})")
                     f.write(' '.join(str(label) for label in labels) + '\n')
             else:
                 raise InvalidSegmentation("segmentation entry must be either a list, int or a string")
