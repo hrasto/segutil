@@ -1,13 +1,15 @@
 from __future__ import annotations
-from posixpath import split
+import shutil
+from tkinter.tix import Tree
 from typing import Iterator, List, Type, Union, Dict, Tuple
 import numpy as np
+from numpy.random import default_rng
 import itertools
 import collections
 import os, sys
 import pickle
+from segmenters.iterator import RestartableMapIterator, MaskedIterator
 
-from segmenters.iterator import RestartableMapIterator
 try: 
     from . import iterator as it
 except ImportError: 
@@ -277,6 +279,59 @@ class Corpus(Vocab):
     def split_line(line):
         return [subw for words in line.split() for subw in words.split('|')[0].split('-')]
 
+    def make_splits(self, split_size: Union[int, float], sample_size: Union[int, float]=1.0, seed=None) -> Tuple[np.ndarray, np.ndarray]:
+        rng = default_rng(seed)
+        data_len = sum([1 for _ in iter(self)])
+
+        # in case sample size is provided, only consider a random subset of the training data
+        sample_size_int = sample_size if type(sample_size) == int else int(sample_size*data_len)
+        sample_size_int = min(data_len, max(sample_size_int, 0))
+        mask_general = None
+        if sample_size_int < data_len: 
+            idx = rng.choice(a=data_len, size=sample_size_int, replace=False)
+            mask_general = np.zeros(data_len)
+            mask_general[idx] = 1
+            mask_general = mask_general == 1
+
+        # make train/test splits via a mask
+        split_size_int = split_size if type(split_size) == int else int(split_size*sample_size_int)
+        if split_size_int < 0: 
+            split_size_int += sample_size_int
+        else: 
+            split_size_int = min(sample_size_int, split_size_int)
+        test_size_int = sample_size_int - split_size_int
+        idx_test = rng.choice(a=sample_size_int, size=test_size_int, replace=False)
+        mask_test = np.zeros(sample_size_int)
+        mask_test[idx_test] = 1
+        mask_test = mask_test == 1
+        mask_train = ~mask_test
+
+        return mask_train, mask_test
+
+    def split(self, mask_train: np.ndarray, mask_test: np.ndarray) -> Tuple[Corpus, Corpus]:
+        #mask_train, mask_test = self.make_splits(split_size, sample_size, seed)
+        #print(f'total size {data_len}; sample size {sample_size_int}; split size {split_size_int}')
+        sequences_train = MaskedIterator(self, mask_train)
+        corpus_train = Corpus(self.idx_to_word, self.word_to_count, sequences_train)
+        sequences_test = MaskedIterator(self, mask_test)
+        corpus_test = Corpus(self.idx_to_word, self.word_to_count, sequences_test)
+        return corpus_train, corpus_test
+
+    def save(self, dirname:str=None) -> Corpus:
+        if dirname is not None:
+            self.dirname = dirname
+        if not os.path.isdir(self.dirname):
+            os.mkdir(self.dirname)
+        with open(os.path.join(self.dirname, 'sequences.txt'), 'w') as f: 
+            for seq in self: 
+                f.write(' '.join([str(_) for _ in seq]) + '\n')
+        with open(os.path.join(self.dirname, 'idx_to_word.pkl'), 'wb') as f:
+            pickle.dump(self.idx_to_word, f)
+        with open(os.path.join(self.dirname, 'word_to_count.pkl'), 'wb') as f:
+            pickle.dump(self.word_to_count, f)
+
+        return self
+
 class InvalidSegmentation(Exception):
     pass
 
@@ -310,7 +365,7 @@ class StructuredCorpus(Corpus):
                 try: 
                     keys = [_ for _ in keys]
                 except: 
-                    raise TypeError('key must be a string or an iterable (of segmentation name(s))')
+                    raise TypeError('key must be either a string or an iterable over strings')
             segmentations = [self.get_segmentation(key) for key in keys]
             segmentations = [self._seg_fpath(key) if seg is None else seg for key, seg in zip(keys, segmentations)]
             sequences = self.sequences
@@ -319,6 +374,52 @@ class StructuredCorpus(Corpus):
         return SegmentationAligner(
             segmentations=segmentations, 
             sequences=sequences).postprocess(self.postprocess)
+
+    def save(self, dirname: str = None, copy_segmentations:bool=False) -> StructuredCorpus:
+        prev_seg_dirname = self._seg_dir()
+        super().save(dirname) # creates a directory, saves vocab and sequences
+        # now save segmentations
+        segs_dirname = self._seg_dir()
+        if not os.path.isdir(segs_dirname):
+            os.mkdir(segs_dirname)
+        if copy_segmentations and prev_seg_dirname is not None and os.path.isdir(prev_seg_dirname): 
+            for sname in self.get_segmentation_names():
+                fpath_prev = os.path.join(prev_seg_dirname, sname+'.txt')
+                fpath_new = self._seg_fpath(sname)
+                shutil.copy(fpath_prev, fpath_new)
+
+        return self
+
+    def split_segmentation(self, sname:str, mask_split: np.ndarray, mask_rest: np.ndarray) -> Tuple[Iterator, Iterator]:
+        split_seg_iter = TryFromFile(self._seg_fpath(sname))
+        split_seg_masked = MaskedIterator(split_seg_iter, mask_split)
+        rest_seg_iter = TryFromFile(self._seg_fpath(sname))
+        rest_seg_masked = MaskedIterator(rest_seg_iter, mask_rest)
+        return split_seg_masked, rest_seg_masked
+
+    def split(self, mask_split: np.ndarray, mask_rest: np.ndarray, name_split:str='train', name_rest:str='test') -> Tuple[StructuredCorpus, StructuredCorpus]:
+        corpus_split, corpus_rest = super().split(mask_split, mask_rest)
+        dirname_split = self.dirname+'_'+name_split
+        dirname_rest = self.dirname+'_'+name_rest
+        if not os.path.isdir(dirname_split): os.mkdir(dirname_split)
+        if not os.path.isdir(dirname_rest): os.mkdir(dirname_rest)
+        scorpus_split = StructuredCorpus(
+            corpus_split.idx_to_word, 
+            corpus_split.word_to_count, 
+            corpus_split.sequences, 
+            dirname_split).save()
+        scorpus_rest = StructuredCorpus(
+            corpus_rest.idx_to_word, 
+            corpus_rest.word_to_count, 
+            corpus_rest.sequences,
+            dirname_rest).save()
+
+        for sname in self.get_segmentation_names():
+            seg_split, seg_rest = self.split_segmentation(sname, mask_split, mask_rest)
+            scorpus_split.add_segmentation((sname, seg_split)) # these calls also store the segmentation file
+            scorpus_rest.add_segmentation((sname, seg_rest))
+
+        return scorpus_split, scorpus_rest
 
     def decode_segmented(self, sname: Key) -> List[Tuple[str, str]]:
         seg_aligner = self[sname]
@@ -716,11 +817,14 @@ corpus = StructuredCorpus.load(dirname)
 print(list(corpus.decode_segmented('default')))
 fpath = '/Users/rastislavhronsky/ml-experiments/corpora_processed/child_proc_uniq_seg_CELEX_fbMFS_sub100.txt'
 corpus=StructuredCorpus.build(fpath, dirname, char_lvl=True)
+"""
+"""
 dirname = 'child'
 corpus=StructuredCorpus.load(dirname)
-print(list(corpus['word'].first_n(3).postprocess(lambda seq: ''.join(corpus.decode_sent(seq)))))
-"""
-"""
+#print(list(corpus['word'].first_n(3).postprocess(lambda seq: ''.join(corpus.decode_sent(seq)))))
+corpus.save('child2', True)
+splits = corpus.make_splits(20, 30, 1)
+c1, c2 = corpus.split(*splits)
 import random
 
 corpus_name='010101'
