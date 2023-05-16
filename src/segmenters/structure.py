@@ -1,5 +1,6 @@
 from __future__ import annotations
 import shutil
+from signal import raise_signal
 from tkinter.tix import Tree
 from typing import Iterator, List, Type, Union, Dict, Tuple
 import numpy as np
@@ -311,10 +312,10 @@ class Corpus(Vocab):
     def split(self, mask_train: np.ndarray, mask_test: np.ndarray) -> Tuple[Corpus, Corpus]:
         #mask_train, mask_test = self.make_splits(split_size, sample_size, seed)
         #print(f'total size {data_len}; sample size {sample_size_int}; split size {split_size_int}')
-        sequences_train = MaskedIterator(self, mask_train)
-        corpus_train = Corpus(self.idx_to_word, self.word_to_count, sequences_train)
-        sequences_test = MaskedIterator(self, mask_test)
-        corpus_test = Corpus(self.idx_to_word, self.word_to_count, sequences_test)
+        sequences_train = list(MaskedIterator(self, mask_train))
+        sequences_test = list(MaskedIterator(self, mask_test))
+        corpus_train = Corpus(self.idx_to_word.copy(), self.word_to_count.copy(), sequences_train)
+        corpus_test = Corpus(self.idx_to_word.copy(), self.word_to_count.copy(), sequences_test)
         return corpus_train, corpus_test
 
     def save(self, dirname:str=None) -> Corpus:
@@ -590,10 +591,13 @@ class StructuredCorpus(Corpus):
                 yield last_boundary
             chunk = []
             counter = 0
-            while chunk != segment_coarse: 
+            while len(chunk) < len(segment_coarse): 
                 counter += 1
                 segment_fine, label_fine = next(iter_fine)
                 chunk += segment_fine
+            
+            if chunk != segment_coarse: 
+                raise Exception('somethings wrong with the segmentation')
 
             boundary = counter - 1 if last_boundary is None else last_boundary + counter
             last_boundary = boundary 
@@ -822,9 +826,12 @@ corpus=StructuredCorpus.build(fpath, dirname, char_lvl=True)
 dirname = 'child'
 corpus=StructuredCorpus.load(dirname)
 #print(list(corpus['word'].first_n(3).postprocess(lambda seq: ''.join(corpus.decode_sent(seq)))))
-corpus.save('child2', True)
+#corpus.save('child2', True)
 splits = corpus.make_splits(20, 30, 1)
 c1, c2 = corpus.split(*splits)
+c1 = StructuredCorpus.load('child_train')
+for b in c1.derive_segment_boundaries('word'):
+    print(b)
 import random
 
 corpus_name='010101'
