@@ -591,6 +591,7 @@ class StructuredCorpus(Corpus):
                 yield last_boundary
             chunk = []
             counter = 0
+
             while len(chunk) < len(segment_coarse): 
                 counter += 1
                 segment_fine, label_fine = next(iter_fine)
@@ -704,14 +705,17 @@ class SegmentationExpander:
             line_parsed = TryFromIterable.readline(line)
             lines.append(line_parsed)
 
-        line_lens = [len(line) for line in lines if type(line)==list]
-        if len(line_lens) > 0: 
-            # need to expand
-            if len(set(line_lens)) > 1: 
-                raise Exception("segmentations arent aligned!")
-            max_len = max(line_lens)
-            expanded = [line if type(line) == list else list(expand_to(line, max_len)) for line in lines]
-            return expanded
+        if self.is_nested:
+            line_lens = [len(line) for line in lines if type(line)==list]
+            if len(line_lens) > 0: 
+                # need to expand
+                if len(set(line_lens)) > 1: 
+                    raise Exception("segmentations arent aligned!")
+                max_len = max(line_lens)
+                expanded = [line if type(line) == list else [line]*max_len for line in lines]
+                return expanded
+            else: 
+                return [[line] for line in lines]
         else: 
             return tuple(lines)
 
@@ -749,6 +753,8 @@ class SegmentationParser:
         while True:
             try:
                 self.labels_start = next(self.iter)
+                if self.labels_start == ('d', 'R'):
+                    print('here')
                 if current_label == self.labels_start:
                     n += 1
                     continue
@@ -810,6 +816,14 @@ class SegmentationAligner:
             subseq = self.postprocess_fn(subseq)
         return subseq, label
 
+"""
+corpus = StructuredCorpus.load('../corpora_myformat/swda_train')
+print(corpus.get_segmentation_names())
+for b in corpus.derive_segment_boundaries('act_tag', 'pos'):
+    print(b)
+print(list(corpus[['pos', 'act_tag']].first_n(10)))
+#print(list(corpus['act_tag'].first_n(10)))
+"""
 """ Some tests: 
 aligned = SegmentationAligner([1,1,2,2,2], [1,2,3,4,5])
 print(list(aligned))
