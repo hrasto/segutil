@@ -570,6 +570,25 @@ class StructuredCorpus(Corpus):
 
         return key
 
+    def keys_overlap(k1:Key, k2:Key)->bool:
+        if type(k1) == str or k1 is None:
+            if type(k2) == str or k2 is None: 
+                return k1 == k2
+            else: # k2 is iterable
+                for subkey in k2: 
+                    if subkey == k1: return True
+                return False
+        else: #k1 is iterable 
+            if type(k2) == str or k2 is None: 
+                for subkey in k1: 
+                    if subkey == k2: return True
+                return False
+            else: # k1 and k2 are iterable
+                for sk1 in k1: 
+                    for sk2 in k2: 
+                        if sk1 == sk2: return True
+                return False
+
     def derive_segment_boundaries(self, sname_coarse:Key, sname_fine:Key=None) -> Iterator:
         """Yields (boundary) indices of sname_coarse with respect to sname_fine. Useful to preserve segmentation info when transforming/summarizing the data under the fine segmentation.
 
@@ -581,8 +600,11 @@ class StructuredCorpus(Corpus):
             _type_: _description_
         """
         aligner_coarse = self[sname_coarse]
-        sname_combined = StructuredCorpus.combine_key(sname_coarse, sname_fine)
-        aligner_fine = self[sname_combined] # use both to ensure all segment boundaries in the coarse one are also in the fine one
+
+        if not StructuredCorpus.keys_overlap(sname_coarse, sname_fine):
+            sname_fine = StructuredCorpus.combine_key(sname_coarse, sname_fine)
+
+        aligner_fine = self[sname_fine] # use both to ensure all segment boundaries in the coarse one are also in the fine one
         iter_fine = iter(aligner_fine)
         last_boundary = None
         for segment_coarse, label_coarse in aligner_coarse:
@@ -857,8 +879,11 @@ fpath = '/Users/rastislavhronsky/ml-experiments/corpora_processed/child_proc_uni
 corpus=StructuredCorpus.build(fpath, dirname, char_lvl=True)
 """
 """
-dirname = 'child'
+#dirname = 'child'
+dirname = '../corpora_myformat/swda_test'
 corpus=StructuredCorpus.load(dirname)
+print(list(corpus.derive_segment_boundaries(['act_tag', 'default'], 'word'))[-5:])
+print(len(list(corpus['word'])))
 for segs_fine, lab_coarse in corpus.segment_wrt('default', 'word'):
     segs_fine, labs_fine = zip(*segs_fine)
     print(segs_fine, labs_fine, lab_coarse)
