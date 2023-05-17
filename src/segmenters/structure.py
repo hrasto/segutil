@@ -570,7 +570,7 @@ class StructuredCorpus(Corpus):
 
         return key
 
-    def derive_segment_boundaries(self, sname_coarse:Key, sname_fine:Key=None):
+    def derive_segment_boundaries(self, sname_coarse:Key, sname_fine:Key=None) -> Iterator:
         """Yields (boundary) indices of sname_coarse with respect to sname_fine. Useful to preserve segmentation info when transforming/summarizing the data under the fine segmentation.
 
         Args:
@@ -602,6 +602,26 @@ class StructuredCorpus(Corpus):
 
             boundary = counter - 1 if last_boundary is None else last_boundary + counter
             last_boundary = boundary 
+
+    def segment_wrt(self, sname_coarse:Key, sname_fine: Key=None) -> Iterator:        
+        aligner_coarse = self[sname_coarse]
+        sname_combined = StructuredCorpus.combine_key(sname_coarse, sname_fine)
+        aligner_fine = self[sname_combined] # use both to ensure all segment boundaries in the coarse one are also in the fine one
+        iter_fine = iter(aligner_fine)
+        last_boundary = None
+        for segment_coarse, label_coarse in aligner_coarse:
+            segments_fine = [] # nested
+            chunk = [] # flat
+
+            while len(chunk) < len(segment_coarse): 
+                segment_fine, label_fine = next(iter_fine)
+                chunk += segment_fine
+                segments_fine.append(segment_fine)
+            
+            if chunk != segment_coarse: 
+                raise Exception('somethings wrong with the segmentation')
+
+            yield segments_fine
 
 class TryFromFile:
     def __init__(self, iterable: Union[Iterator, str]):
@@ -835,10 +855,11 @@ corpus = StructuredCorpus.load(dirname)
 print(list(corpus.decode_segmented('default')))
 fpath = '/Users/rastislavhronsky/ml-experiments/corpora_processed/child_proc_uniq_seg_CELEX_fbMFS_sub100.txt'
 corpus=StructuredCorpus.build(fpath, dirname, char_lvl=True)
-"""
-"""
 dirname = 'child'
 corpus=StructuredCorpus.load(dirname)
+print(list(corpus.segment_wrt('default', 'word')))
+"""
+"""
 #print(list(corpus['word'].first_n(3).postprocess(lambda seq: ''.join(corpus.decode_sent(seq)))))
 #corpus.save('child2', True)
 splits = corpus.make_splits(20, 30, 1)
