@@ -616,12 +616,12 @@ class StructuredCorpus(Corpus):
             while len(chunk) < len(segment_coarse): 
                 segment_fine, label_fine = next(iter_fine)
                 chunk += segment_fine
-                segments_fine.append(segment_fine)
+                segments_fine.append((segment_fine, label_fine))
             
             if chunk != segment_coarse: 
                 raise Exception('somethings wrong with the segmentation')
 
-            yield segments_fine
+            yield segments_fine, label_coarse
 
 class TryFromFile:
     def __init__(self, iterable: Union[Iterator, str]):
@@ -855,11 +855,14 @@ corpus = StructuredCorpus.load(dirname)
 print(list(corpus.decode_segmented('default')))
 fpath = '/Users/rastislavhronsky/ml-experiments/corpora_processed/child_proc_uniq_seg_CELEX_fbMFS_sub100.txt'
 corpus=StructuredCorpus.build(fpath, dirname, char_lvl=True)
+"""
+"""
 dirname = 'child'
 corpus=StructuredCorpus.load(dirname)
-print(list(corpus.segment_wrt('default', 'word')))
-"""
-"""
+for segs_fine, lab_coarse in corpus.segment_wrt('default', 'word'):
+    segs_fine, labs_fine = zip(*segs_fine)
+    print(segs_fine, labs_fine, lab_coarse)
+    print()
 #print(list(corpus['word'].first_n(3).postprocess(lambda seq: ''.join(corpus.decode_sent(seq)))))
 #corpus.save('child2', True)
 splits = corpus.make_splits(20, 30, 1)
