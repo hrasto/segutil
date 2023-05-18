@@ -1,4 +1,5 @@
 from __future__ import annotations
+from posixpath import split
 import shutil
 from signal import raise_signal
 from tkinter.tix import Tree
@@ -9,7 +10,7 @@ import itertools
 import collections
 import os, sys
 import pickle
-from segmenters.iterator import RestartableMapIterator, MaskedIterator
+from segmenters.iterator import RestartableMapIterator, MaskedIterator, line2characters, line2subwords, line2words, line2characters_whitespace
 
 try: 
     from . import iterator as it
@@ -230,7 +231,7 @@ class Corpus(Vocab):
     def load(dirname, in_memory=True):
         return Corpus(*Corpus._load(dirname, in_memory))
 
-    def _build(lines:Iterator, dirname:str, unk_token:str=default_unk_token, in_memory=True, extra_tokens:List[str]=[]):
+    def _build(lines:Iterator, dirname:str, unk_token:str=default_unk_token, in_memory=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords):
         # create the destination for the corpus files
         if not os.path.isdir(dirname): os.mkdir(dirname)
 
@@ -238,7 +239,19 @@ class Corpus(Vocab):
         #tfiter = TextFileIterator(filenames=[fpath])
         #tfiter = TryFromFile(fpath)
         #itertokens = lambda: map(Corpus.split_line, tfiter)
-        itertokens = it.RestartableMapIterator(lines, Corpus.split_line)
+        if type(lines) != list: 
+            if type(split_line) == str:
+                if split_line in ['w', 'word', 'words']: 
+                    split_line = line2words
+                elif split_line in ['sw', 'subword', 'subwords']: 
+                    split_line = line2subwords
+                elif split_line in ['ch', 'char', 'chars', 'character', 'characters']: 
+                    split_line = line2characters
+                else: 
+                    split_line = lambda x: x
+            itertokens = it.RestartableMapIterator(lines, split_line)
+        else: 
+            itertokens = lines # should be a nested list in this case 
 
         print("Building vocabulary...")
         #itertokens_flat = lambda: itertools.chain.from_iterable(itertokens())
@@ -273,12 +286,12 @@ class Corpus(Vocab):
         else: 
             return idx_to_word, word_to_count, sequences_fpath, dirname
 
-    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[]):
-        lines = TryFromFile(fpath)
-        return Corpus(*Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens))
-
-    def split_line(line):
-        return [subw for words in line.split() for subw in words.split('|')[0].split('-')]
+    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords):
+        if type(fpath) != list:
+            lines = TryFromFile(fpath)
+        else: 
+            lines = fpath
+        return Corpus(*Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line))
 
     def make_splits(self, split_size: Union[int, float], sample_size: Union[int, float]=1.0, seed=None) -> Tuple[np.ndarray, np.ndarray]:
         rng = default_rng(seed)
@@ -527,21 +540,21 @@ class StructuredCorpus(Corpus):
         except ValueError:
             self.segmentations.append((sname, slist if self.in_memory else None))
 
-    def build(fpath:str, dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], char_lvl:bool=False):
+    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords):
         """ 'segmentations' is a list of tuples (sname, slist) where 'slist' is either a list of labels or list of lists of labels. """
-        lines = TryFromFile(fpath)
-        if char_lvl: 
-            reformat_line = lambda line: ' '.join([char for word in Corpus.split_line(line) for char in word])
-            lines = RestartableMapIterator(lines, reformat_line)
+        if type(fpath) == list:
+            lines = fpath
+        else:
+            lines = TryFromFile(fpath)
 
-        corpus_attributes = Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens)
+        corpus_attributes = Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line)
         corpus = StructuredCorpus(*corpus_attributes)
         default_seg = [i for i, _ in enumerate(corpus)]
 
         corpus.add_segmentation(('default', default_seg), overwrite=True)
-        if char_lvl: 
+        if type(fpath) != list and split_line in ['ch', 'char', 'chars', 'character', 'characters', line2characters]: 
             lines = TryFromFile(fpath)
-            word_segs = lambda line: [i for i, word in enumerate(Corpus.split_line(line)) for _ in range(len(word))]
+            word_segs = lambda line: [i for i, word in enumerate(line2subwords(line)) for _ in range(len(word))]
             word_segmentation = RestartableMapIterator(lines, word_segs)
             corpus.add_segmentation(('word', word_segmentation), overwrite=True)
         return corpus
@@ -865,21 +878,23 @@ for b in corpus.derive_segment_boundaries('act_tag', 'pos'):
     print(b)
 print(list(corpus[['pos', 'act_tag']].first_n(10)))
 #print(list(corpus['act_tag'].first_n(10)))
-"""
-""" Some tests: 
 aligned = SegmentationAligner([1,1,2,2,2], [1,2,3,4,5])
 print(list(aligned))
 tmp = 'tmp.txt'
 dirname = 'applejuice'
-#corpus = StructuredCorpus.build(tmp, dirname)
+corpus = StructuredCorpus.build(tmp, dirname)
 corpus = StructuredCorpus.load(dirname)
 #print(list(corpus.derive_segment_boundaries('default')))
 print(list(corpus.decode_segmented('default')))
+"""
+
+""" Some tests: 
+dirname = 'child_char'
 fpath = '/Users/rastislavhronsky/ml-experiments/corpora_processed/child_proc_uniq_seg_CELEX_fbMFS_sub100.txt'
-corpus=StructuredCorpus.build(fpath, dirname, char_lvl=True)
+corpus=StructuredCorpus.build(fpath, dirname, split_line='ch')
+
 """
 """
-#dirname = 'child'
 dirname = '../corpora_myformat/swda_test'
 corpus=StructuredCorpus.load(dirname)
 print(list(corpus.derive_segment_boundaries(['act_tag', 'default'], 'word'))[-5:])

@@ -77,8 +77,11 @@ class FileReader:
 def line2subwords(line):
     return [subword for word in line.split() for subword in word.split('|')[0].split('-')]
 
-def line2characters(line):
+def line2characters_whitespace(line):
     return [ch for ch in line.strip() if ch not in ['|', '-']]
+
+def line2characters(line):
+    return [ch for sw in line2subwords(line) for ch in sw]
 
 def line2words(line):
     return [word.split('|')[0].replace('-', '') for word in line.split()]
