@@ -1,5 +1,7 @@
 from __future__ import annotations
 from posixpath import split
+from random import sample
+import random
 import shutil
 from signal import raise_signal
 from tkinter.tix import Tree
@@ -293,7 +295,7 @@ class Corpus(Vocab):
             lines = fpath
         return Corpus(*Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line))
 
-    def make_splits(self, split_size: Union[int, float], sample_size: Union[int, float]=1.0, seed=None) -> Tuple[np.ndarray, np.ndarray]:
+    def make_splits(self, split_size: Union[int, float], sample_size: Union[int, float]=1.0, seed=None, shuffle=False) -> Tuple[np.ndarray, np.ndarray]:
         rng = default_rng(seed)
         data_len = sum([1 for _ in iter(self)])
 
@@ -302,10 +304,12 @@ class Corpus(Vocab):
         sample_size_int = min(data_len, max(sample_size_int, 0))
         mask_general = None
         if sample_size_int < data_len: 
-            idx = rng.choice(a=data_len, size=sample_size_int, replace=False)
-            mask_general = np.zeros(data_len)
-            mask_general[idx] = 1
-            mask_general = mask_general == 1
+            if shuffle: 
+                sample_idx = rng.choice(a=data_len, size=sample_size_int, replace=False)
+            else: 
+                sample_idx = np.arange(sample_size_int)
+        else: 
+            sample_idx = np.arange(data_len)
 
         # make train/test splits via a mask
         split_size_int = split_size if type(split_size) == int else int(split_size*sample_size_int)
@@ -313,14 +317,17 @@ class Corpus(Vocab):
             split_size_int += sample_size_int
         else: 
             split_size_int = min(sample_size_int, split_size_int)
-        test_size_int = sample_size_int - split_size_int
-        idx_test = rng.choice(a=sample_size_int, size=test_size_int, replace=False)
-        mask_test = np.zeros(sample_size_int)
-        mask_test[idx_test] = 1
-        mask_test = mask_test == 1
-        mask_train = ~mask_test
+            
+        split_idx = sample_idx[:split_size_int]
+        other_idx = sample_idx[split_size_int:]
 
-        return mask_train, mask_test
+        # convert indices to masks
+        split_mask = np.zeros(data_len) == 1
+        split_mask[split_idx] = True
+        other_mask = np.zeros(data_len) == 1
+        other_mask[other_idx] = True
+
+        return split_mask, other_mask
 
     def split(self, mask_train: np.ndarray, mask_test: np.ndarray) -> Tuple[Corpus, Corpus]:
         #mask_train, mask_test = self.make_splits(split_size, sample_size, seed)
@@ -893,6 +900,10 @@ dirname = 'child_char'
 fpath = '/Users/rastislavhronsky/ml-experiments/corpora_processed/child_proc_uniq_seg_CELEX_fbMFS_sub100.txt'
 corpus=StructuredCorpus.build(fpath, dirname, split_line='ch')
 
+splits = corpus.make_splits(10, 15, 1, True)
+c1, c2 = corpus.split(*splits)
+c1 = StructuredCorpus.load('child_train')
+
 """
 """
 dirname = '../corpora_myformat/swda_test'
@@ -905,9 +916,6 @@ for segs_fine, lab_coarse in corpus.segment_wrt('default', 'word'):
     print()
 #print(list(corpus['word'].first_n(3).postprocess(lambda seq: ''.join(corpus.decode_sent(seq)))))
 #corpus.save('child2', True)
-splits = corpus.make_splits(20, 30, 1)
-c1, c2 = corpus.split(*splits)
-c1 = StructuredCorpus.load('child_train')
 for b in c1.derive_segment_boundaries('word'):
     print(b)
 import random
