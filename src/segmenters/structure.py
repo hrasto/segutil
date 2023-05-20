@@ -295,7 +295,7 @@ class Corpus(Vocab):
             lines = fpath
         return Corpus(*Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line))
 
-    def make_splits(self, split_size: Union[int, float], sample_size: Union[int, float]=1.0, seed=None, shuffle=False) -> Tuple[np.ndarray, np.ndarray]:
+    def make_splits(self, split_size: Union[int, float], sample_size: Union[int, float]=1.0, seed=None, randomize=False) -> Tuple[np.ndarray, np.ndarray]:
         rng = default_rng(seed)
         data_len = sum([1 for _ in iter(self)])
 
@@ -304,7 +304,7 @@ class Corpus(Vocab):
         sample_size_int = min(data_len, max(sample_size_int, 0))
         mask_general = None
         if sample_size_int < data_len: 
-            if shuffle: 
+            if randomize: 
                 sample_idx = rng.choice(a=data_len, size=sample_size_int, replace=False)
             else: 
                 sample_idx = np.arange(sample_size_int)
