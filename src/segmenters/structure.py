@@ -255,9 +255,9 @@ class Corpus(Vocab):
         else: 
             itertokens = lines # should be a nested list in this case 
 
-        print("Building vocabulary...")
         #itertokens_flat = lambda: itertools.chain.from_iterable(itertokens())
         if reference is None: 
+            print("Building vocabulary...")
             itertokens_flat = itertools.chain.from_iterable(itertokens)
             word_to_count = dict(collections.Counter(itertokens_flat).most_common())
             idx_to_word = list(word_to_count.keys())
@@ -282,7 +282,10 @@ class Corpus(Vocab):
         sequences_fpath = os.path.abspath(sequences_fpath)
         with open(sequences_fpath, 'w') as f:
             for tokens in itertokens:
-                idx = [word_to_idx[token] for token in tokens]
+                if reference is None: 
+                    idx = [word_to_idx[token] for token in tokens]
+                else: 
+                    idx = reference.encode_sent(tokens)
                 if in_memory:
                     sequences.append(idx)
                 line = ' '.join(map(str, idx)) + '\n'
