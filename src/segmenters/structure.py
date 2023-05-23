@@ -233,7 +233,7 @@ class Corpus(Vocab):
     def load(dirname, in_memory=True):
         return Corpus(*Corpus._load(dirname, in_memory))
 
-    def _build(lines:Iterator, dirname:str, unk_token:str=default_unk_token, in_memory=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords):
+    def _build(lines:Iterator, dirname:str, unk_token:str=default_unk_token, in_memory=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords, reference:Corpus=None):
         # create the destination for the corpus files
         if not os.path.isdir(dirname): os.mkdir(dirname)
 
@@ -257,14 +257,19 @@ class Corpus(Vocab):
 
         print("Building vocabulary...")
         #itertokens_flat = lambda: itertools.chain.from_iterable(itertokens())
-        itertokens_flat = itertools.chain.from_iterable(itertokens)
-        word_to_count = dict(collections.Counter(itertokens_flat).most_common())
-        idx_to_word = list(word_to_count.keys())
-        idx_to_word.append(unk_token)
-        for token in extra_tokens:
-            if token not in idx_to_word:
-                idx_to_word.append(token)
-        word_to_idx = dict(zip(idx_to_word, range(len(idx_to_word))))
+        if reference is None: 
+            itertokens_flat = itertools.chain.from_iterable(itertokens)
+            word_to_count = dict(collections.Counter(itertokens_flat).most_common())
+            idx_to_word = list(word_to_count.keys())
+            idx_to_word.append(unk_token)
+            for token in extra_tokens:
+                if token not in idx_to_word:
+                    idx_to_word.append(token)
+            word_to_idx = dict(zip(idx_to_word, range(len(idx_to_word))))
+        else: 
+            word_to_idx = reference.word_to_idx
+            idx_to_word = reference.idx_to_word
+            word_to_count = reference.word_to_count
 
         with open(os.path.join(dirname, 'idx_to_word.pkl'), 'wb') as f:
             pickle.dump(idx_to_word, f)
@@ -288,12 +293,12 @@ class Corpus(Vocab):
         else: 
             return idx_to_word, word_to_count, sequences_fpath, dirname
 
-    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords):
+    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords, reference: Corpus=None):
         if type(fpath) != list:
             lines = TryFromFile(fpath)
         else: 
             lines = fpath
-        return Corpus(*Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line))
+        return Corpus(*Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line, reference))
 
     def make_splits(self, split_size: Union[int, float], sample_size: Union[int, float]=1.0, seed=None, randomize=False) -> Tuple[np.ndarray, np.ndarray]:
         rng = default_rng(seed)
@@ -547,14 +552,14 @@ class StructuredCorpus(Corpus):
         except ValueError:
             self.segmentations.append((sname, slist if self.in_memory else None))
 
-    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords):
+    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords, reference:Corpus=None):
         """ 'segmentations' is a list of tuples (sname, slist) where 'slist' is either a list of labels or list of lists of labels. """
         if type(fpath) == list:
             lines = fpath
         else:
             lines = TryFromFile(fpath)
 
-        corpus_attributes = Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line)
+        corpus_attributes = Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line, reference)
         corpus = StructuredCorpus(*corpus_attributes)
         default_seg = [i for i, _ in enumerate(corpus)]
 
