@@ -49,6 +49,17 @@ class RestartableFlattenIterator:
             # main iterable was consumed, we're done
             raise StopIteration()
 
+class RestartableCallableIterator:
+    def __init__(self, fn, fn_args=[], fn_kwargs={}) -> None:
+        self.fn = fn
+        self.fn_args = fn_args
+        self.fn_kwargs = fn_kwargs
+    def __iter__(self):
+        self.iter = iter(self.fn(*self.fn_args, **self.fn_kwargs))
+        return self
+    def __next__(self):
+        return next(self.iter)
+
 class FileReader:
     def __init__(self, fpath):
         if not os.path.isfile(fpath):
