@@ -617,6 +617,18 @@ class StructuredCorpus(Corpus):
                         if sk1 == sk2: return True
                 return False
 
+    def keys_identical(k1:Key, k2:Key)->bool:
+        if type(k1) == str or k1 is None:
+            if type(k2) == str or k2 is None: 
+                return k1 == k2
+            else: # k2 is iterable
+                return set((k1,)) == set(k2)
+        else: #k1 is iterable 
+            if type(k2) == str or k2 is None: 
+                return set((k2,)) == set(k1)
+            else: # k1 and k2 are iterable
+                return set(k1) == set(k2)
+
     def derive_segment_boundaries(self, sname_coarse:Key, sname_fine:Key=None) -> Iterator:
         """Yields (boundary) indices of sname_coarse with respect to sname_fine. Useful to preserve segmentation info when transforming/summarizing the data under the fine segmentation.
 
