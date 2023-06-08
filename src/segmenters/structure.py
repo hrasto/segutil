@@ -85,11 +85,13 @@ class Vocab:
     idx_to_count: List
     word_to_idx: dict
 
-    def __init__(self, tokens:List=[], set_last_type_as_unk:bool=False, dont_do_nothing:bool=False):
+    def __init__(self, tokens:List=[], set_last_type_as_unk:bool=False, dont_do_nothing:bool=False, max_vocab_size:int=100000):
         if not dont_do_nothing: 
-            types, counts = np.unique([t for t in tokens], return_counts=True)
-            self.idx_to_word = list(types)
-            self.idx_to_count = list(map(int, counts))
+            #types, counts = np.unique([t for t in tokens], return_counts=True) # returns types in ascending order 
+            #self.idx_to_word = list(types)
+            #self.idx_to_count = list(map(int, counts))
+            ct = collections.Counter([t for t in tokens])
+            self.idx_to_word, self.idx_to_count = zip(*ct.most_common(max_vocab_size))
             
         self.word_to_idx = {word: idx for idx, word in enumerate(self.idx_to_word)}
 
@@ -233,7 +235,7 @@ class Corpus(Vocab):
     def load(dirname, in_memory=True):
         return Corpus(*Corpus._load(dirname, in_memory))
 
-    def _build(lines:Iterator, dirname:str, unk_token:str=default_unk_token, in_memory=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords, reference:Corpus=None):
+    def _build(lines:Iterator, dirname:str, unk_token:str=default_unk_token, in_memory=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords, reference:Corpus=None, max_vocab_size:int=100000):
         # create the destination for the corpus files
         if not os.path.isdir(dirname): os.mkdir(dirname)
 
@@ -259,7 +261,7 @@ class Corpus(Vocab):
         if reference is None: 
             print("Building vocabulary...")
             itertokens_flat = itertools.chain.from_iterable(itertokens)
-            word_to_count = dict(collections.Counter(itertokens_flat).most_common())
+            word_to_count = dict(collections.Counter(itertokens_flat).most_common(max_vocab_size))
             idx_to_word = list(word_to_count.keys())
             idx_to_word.append(unk_token)
             for token in extra_tokens:
@@ -270,6 +272,7 @@ class Corpus(Vocab):
             word_to_idx = reference.word_to_idx
             idx_to_word = reference.idx_to_word
             word_to_count = reference.word_to_count
+        word_to_count[unk_token]=0
 
         with open(os.path.join(dirname, 'idx_to_word.pkl'), 'wb') as f:
             pickle.dump(idx_to_word, f)
@@ -283,9 +286,16 @@ class Corpus(Vocab):
         with open(sequences_fpath, 'w') as f:
             for tokens in itertokens:
                 if reference is None: 
-                    idx = [word_to_idx[token] for token in tokens]
+                    idx = []
+                    for token in tokens:
+                        try:
+                            idx.append(word_to_idx[token])
+                        except KeyError: 
+                            idx.append(word_to_idx[unk_token])
+                            word_to_count[unk_token] += 1
                 else: 
                     idx = reference.encode_sent(tokens)
+
                 if in_memory:
                     sequences.append(idx)
                 line = ' '.join(map(str, idx)) + '\n'
@@ -296,12 +306,12 @@ class Corpus(Vocab):
         else: 
             return idx_to_word, word_to_count, sequences_fpath, dirname
 
-    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords, reference: Corpus=None):
+    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords, reference: Corpus=None, max_vocab_size:int=100000):
         if type(fpath) != list:
             lines = TryFromFile(fpath)
         else: 
             lines = fpath
-        return Corpus(*Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line, reference))
+        return Corpus(*Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line, reference, max_vocab_size))
 
     def make_splits(self, split_size: Union[int, float], sample_size: Union[int, float]=1.0, seed=None, randomize=False) -> Tuple[np.ndarray, np.ndarray]:
         rng = default_rng(seed)
@@ -555,14 +565,14 @@ class StructuredCorpus(Corpus):
         except ValueError:
             self.segmentations.append((sname, slist if self.in_memory else None))
 
-    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords, reference:Corpus=None):
+    def build(fpath:Union[str, Iterator], dirname:str, unk_token:str=default_unk_token, in_memory:bool=True, extra_tokens:List[str]=[], split_line:Union[str, any]=line2subwords, reference:Corpus=None, max_vocab_size:int=100000):
         """ 'segmentations' is a list of tuples (sname, slist) where 'slist' is either a list of labels or list of lists of labels. """
         if type(fpath) == list:
             lines = fpath
         else:
             lines = TryFromFile(fpath)
 
-        corpus_attributes = Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line, reference)
+        corpus_attributes = Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line, reference, max_vocab_size)
         corpus = StructuredCorpus(*corpus_attributes)
         default_seg = [i for i, _ in enumerate(corpus)]
 
