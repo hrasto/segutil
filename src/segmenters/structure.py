@@ -574,14 +574,25 @@ class StructuredCorpus(Corpus):
 
         corpus_attributes = Corpus._build(lines, dirname, unk_token, in_memory, extra_tokens, split_line, reference, max_vocab_size)
         corpus = StructuredCorpus(*corpus_attributes)
+        
+        # default segmentation enumerates lines
         default_seg = [i for i, _ in enumerate(corpus)]
-
         corpus.add_segmentation(('default', default_seg), overwrite=True)
+
+        # in case we segment by characters, add word-level indices 
         if type(fpath) != list and split_line in ['ch', 'char', 'chars', 'character', 'characters', line2characters]: 
             lines = TryFromFile(fpath)
             word_segs = lambda line: [i for i, word in enumerate(line2subwords(line)) for _ in range(len(word))]
             word_segmentation = RestartableMapIterator(lines, word_segs)
             corpus.add_segmentation(('word', word_segmentation), overwrite=True)
+
+        # in case we segment by subwords, add word-level indices 
+        if type(fpath) != list and split_line in ['s', 'sw', 'subword', 'subwords', line2subwords]: 
+            lines = TryFromFile(fpath)
+            word_segs = lambda line: [i for i, word in enumerate(line2words(line)) for _ in range(len(line2subwords(word)))]
+            word_segmentation = RestartableMapIterator(lines, word_segs)
+            corpus.add_segmentation(('word', word_segmentation), overwrite=True)
+
         return corpus
 
     def load(dirname:str, in_memory:bool=True):

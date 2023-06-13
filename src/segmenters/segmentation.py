@@ -127,7 +127,7 @@ class SegmenterBlaBla(SegmenterNotSerializable):
         return [sent[i*3:(i+1)*3] for i in range(int(math.ceil(len(sent)/3)))]
 
 class FallBackSegmenter(SegmenterNotSerializable):
-    def __init__(self, segmenters=[]):
+    def __init__(self, *segmenters):
         self.segmenters = segmenters
     def segment(self, sent: str):
         for segmenter in self.segmenters: 
