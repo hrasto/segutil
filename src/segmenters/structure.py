@@ -92,6 +92,8 @@ class Vocab:
             #self.idx_to_count = list(map(int, counts))
             ct = collections.Counter([t for t in tokens])
             self.idx_to_word, self.idx_to_count = zip(*ct.most_common(max_vocab_size))
+            self.idx_to_word = list(self.idx_to_word) # zip returns tuples
+            self.idx_to_count = list(self.idx_to_count)
             
         self.word_to_idx = {word: idx for idx, word in enumerate(self.idx_to_word)}
 
@@ -549,14 +551,14 @@ class StructuredCorpus(Corpus):
             if type(first_entry) in [int, str]:
                 for label in slist:
                     f.write(str(label) + '\n')
-            elif type(first_entry) == list:
+            elif type(first_entry) == list or type(first_entry) == tuple:
                 for i, (labels, seq) in enumerate(zip(slist, self.sequences)):
                     if len(labels) != len(seq):
                         delete = True
                         raise InvalidSegmentation(f"length of segmentation '{sname}' does not match at line {i} ({len(seq)}!={len(labels)})")
                     f.write(' '.join(str(label) for label in labels) + '\n')
             else:
-                raise InvalidSegmentation("segmentation entry must be either a list, int or a string")
+                raise InvalidSegmentation("segmentation entry must be either a list, tuple, int or a string")
         if delete:
             os.remove(sfpath)
         try:
