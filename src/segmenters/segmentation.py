@@ -48,13 +48,32 @@ def load_celex_morpho():
 
 def list_built_in():
     names = [fname.split('.')[0] for fname in os.listdir(make_full_fname('')) if fname != 'celex_morpho_segmentation_curated.tsv']
-    return ['celex_morpho', 'morfessor', 'bpe'] + names
+    return ['dummy', 'celex_morpho', 'celex_fallback', 'morfessor', 'bpe'] + names
 
 def built_in(name):
+    if name == 'dummy':
+        return SegmenterDummy()
+
     if name == 'celex_morpho':
         #fpath = pkg_resources.resource_filename('kgp', 'grammars/' + source + '.xml')
         celex_morpho = load_celex_morpho()
         return LookUpSegmenter(celex_morpho)
+
+    if name == 'celex_fallback':
+        #fpath = pkg_resources.resource_filename('kgp', 'grammars/' + source + '.xml')
+        celex_morpho = load_celex_morpho()
+        tokeep = celex_morpho.map(lambda x: ''.join(x)) == celex_morpho.index
+        celex_morpho = celex_morpho[tokeep]
+        celex_morpho["can't"]=["ca", "n't"]
+        celex_morpho["don't"]=["do", "n't"]
+        celex_morpho["i'm"]=["i", "'m'"]
+        celex_segmenter = LookUpSegmenter(celex_morpho)
+        seg_fallback = SegmenterMorfessor.load(make_full_fname('morfessor_tokens.pkl'))
+        segmenter = FallBackSegmenter(
+            celex_segmenter,
+            seg_fallback
+        )
+        return segmenter
     
     if name == 'morfessor':
         return SegmenterMorfessor.load(make_full_fname('morfessor_tokens.pkl'))
