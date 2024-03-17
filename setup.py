@@ -31,6 +31,7 @@ setuptools.setup(
         'pandas',
         'tokenizers',
         'numpy',
-        'morfessor'
+        'morfessor',
+        'dict',
     ]
 )
