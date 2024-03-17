@@ -149,32 +149,30 @@ class SegmentedCorpus:
         for key, group in itertools.groupby(segmentation): 
             yield key, sum(1 for _ in group)
 
-    def segments(self, key: Key):
-        segmentation = self._resolve_segmentation(key)
-        iter_data = iter(self.data)
-        for label, size in segmentation:
-            _data = [next(iter_data) for i in range(size)]
-            segment = {'data': _data, 'label': label}
-            yield segment
-
-    def segments_wrt(self, coarse:Key, fine:Key):
-        iter_data = iter(self.data)
-        seg_fine = self._resolve_segmentation(fine, coarse)
+    def segments(self, coarse: Key, fine: Key=None):
         seg_coarse = self._resolve_segmentation(coarse)
-        iter_seg_fine = iter(seg_fine)
-        iter_seg_coarse = iter(seg_coarse)
+        iter_data = iter(self.data)
 
-        while True: 
-            try: key_coarse, size_coarse = next(iter_seg_coarse)
-            except StopIteration: break
-            segment = []
-            while size_coarse > 0: 
-                key_fine, size_fine = next(iter_seg_fine)
-                segment.append({
-                    'data': [next(iter_data) for i in range(size_fine)], 
-                    'label_fine': key_fine})
-                size_coarse -= size_fine
-            yield {'segments': segment, 'label_coarse': key_coarse}
+        if fine is None: 
+            for label, size in seg_coarse:
+                _data = [next(iter_data) for i in range(size)]
+                segment = {'data': _data, 'label': label}
+                yield segment
+        else: 
+            seg_fine = self._resolve_segmentation(fine, coarse)
+            iter_seg_fine = iter(seg_fine)
+            iter_seg_coarse = iter(seg_coarse)
+            while True: 
+                try: key_coarse, size_coarse = next(iter_seg_coarse)
+                except StopIteration: break
+                segment = []
+                while size_coarse > 0: 
+                    key_fine, size_fine = next(iter_seg_fine)
+                    segment.append({
+                        'data': [next(iter_data) for i in range(size_fine)], 
+                        'label_fine': key_fine})
+                    size_coarse -= size_fine
+                yield {'segments': segment, 'label_coarse': key_coarse}        
 
     def save(self, path, enumerate_iterables=True): 
         if enumerate_iterables: self._enumerate_iterables()
@@ -250,19 +248,28 @@ class SegmentedCorpus:
     
 if __name__ == '__main__': 
     corpus = SegmentedCorpus.build_conll(root='../corpora/conll2000/', fileids=['test.txt'], chunk_types=None)
-    corpus.list_available_segmentations()
+    print(corpus.list_available_segmentations())
     corpus.save('connl.pkl')
     corpus = SegmentedCorpus.load('connl.pkl')
-    for segments in itertools.islice(corpus.segments_wrt(('chunk_type', 'chunk_num'), 'POS'), 3): 
+    for segments in itertools.islice(corpus.segments(('chunk_type', 'chunk_num'), 'POS'), 3): 
         print(segments['label_coarse'])
         for segment in segments['segments']:
             print("\t", segment['label_fine'], corpus.vocab.decode_sent(segment['data']))
+    for Seg in itertools.islice(corpus.segments(coarse='sent_num', fine='chunk_num'), 5): 
+        print(f'sent. {Seg["label_coarse"]}')
+        for seg in Seg['segments']: 
+            print(f'chunk {seg["label_fine"]}')
+            print(corpus.vocab.decode_sent(seg['data']))
             
-    corpus = SegmentedCorpus.build_from_lines(['a b c d e', 'f g h'])
+    corpus = SegmentedCorpus.build_from_lines([
+        'hello there', 
+        'how are you ?',
+    ], split_line=str.split, min_count=1, unk_token='<UNK>')
+
     for line in corpus.segments(None):
-        print(line)
+        print(corpus.vocab.decode_sent(line['data']), line['label'])
     for line in corpus.segments('line_num'):
-        print(line)
+        print(corpus.vocab.decode_sent(line['data']), line['label'])
     print()
 
     s0 = [1,1,1,1,1,1,1,1,1]
@@ -271,7 +278,7 @@ if __name__ == '__main__':
     seq = range(len(s1))
     vcb = Vocab.build(seq)
     sc = SegmentedCorpus(seq, [s0, s1, s2], False, vcb)
-    for seg in sc.segments_wrt((0, 1), 2): 
+    for seg in sc.segments((0, 1), 2): 
         print(seg)
     for seg in sc.segments(0): 
         print(seg)
@@ -283,7 +290,7 @@ if __name__ == '__main__':
     vcb = Vocab.build(seq)
     sc = SegmentedCorpus(seq, [s0, s1, s2], True, vcb)
     print()
-    for seg in sc.segments_wrt((0, 1), 2): 
+    for seg in sc.segments((0, 1), 2): 
         print(seg)
     for seg in sc.segments(0): 
         print(seg)
