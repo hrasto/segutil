@@ -33,5 +33,6 @@ setuptools.setup(
         'numpy',
         'morfessor',
         'dict',
+        'nltk',
     ]
 )

@@ -1,2 +1,2 @@
-from iterator import * 
-from corpus import *
+from segmenters.iterator import * 
+from segmenters.corpus import *

@@ -4,11 +4,12 @@ import collections
 import nltk
 import pickle
 import itertools
+import nltk
 
 try: 
-    from . import iterator as it
+    from .iterator import *
 except ImportError: 
-    import segmenters.iterator as it
+    from segmenters import RestartableMapIterator, RestartableFlattenIterator, RestartableBatchIterator, RestartableCallableIterator
 
 default_unk_token = '<UNK>'
 
@@ -64,19 +65,23 @@ class Vocab:
     def decode_batch(self, sents, stringify=False):
         return [self.decode_sent(sent, stringify) for sent in sents]
     
-def build_vocab(flat_tokens:typing.Iterable=[], min_count=1, unk_token:str=default_unk_token):
-    """ helper method to build a vocabulary from a stream of tokens """
-    word_to_count = collections.Counter([tok for tok in flat_tokens])
-    word_to_count = collections.Counter({w: c for w, c in word_to_count.items() if c >= min_count})
-    word_to_idx = bidict((word, i) for i, (word, count) in enumerate(word_to_count.most_common()))
-    return Vocab(word_to_idx=word_to_idx, word_to_count=word_to_count, unk_token=unk_token)
-
+    def build(flat_tokens:typing.Iterable=[], min_count=1, unk_token:str=default_unk_token):
+        """ helper method to build a vocabulary from a stream of tokens """
+        word_to_count = collections.Counter([tok for tok in flat_tokens])
+        word_to_count = collections.Counter({w: c for w, c in word_to_count.items() if c >= min_count})
+        word_to_idx = bidict((word, i) for i, (word, count) in enumerate(word_to_count.most_common()))
+        return Vocab(word_to_idx=word_to_idx, word_to_count=word_to_count, unk_token=unk_token)
+    
+#vcb = Vocab.build('salkjdfhaszlkjdfhaskljdfhaslkjdfhajksdfhadsjklfhaslkjdfhasdkljfhasdlfj', min_count=1)
+#vcb.word_to_idx, vcb.word_to_count, vcb.encode_sent('blabla')
+    
 Key = typing.Union[str, int, typing.Set[typing.Union[str, int]]]
 
 class SegmentedCorpus:
-    def __init__(self, vocab: Vocab, data: typing.Iterable, 
+    def __init__(self, data: typing.Iterable, 
                  segmentation: typing.Union[None, typing.Iterable, typing.List[typing.Iterable], typing.Dict[str, typing.Iterable]]=None,
-                 packed=True) -> None:
+                 packed=True,
+                 vocab: Vocab=None) -> None:
         """Constructor
 
         Args:
@@ -97,6 +102,13 @@ class SegmentedCorpus:
 
     def list_available_segmentations(self):
         return list(self.segmentations.keys())
+    
+    def _enumerate_iterables(self): 
+        if type(self.data) != list:
+            self.data = list(self.data)
+        for key in self.segmentations.keys(): 
+            if type(self.segmentations[key]) != list: 
+                self.segmentations[key] = list(self.segmentations[key])
     
     def _normalize_key(self, key: Key):
         if key is None: 
@@ -164,19 +176,114 @@ class SegmentedCorpus:
                 size_coarse -= size_fine
             yield {'segments': segment, 'label_coarse': key_coarse}
 
-    def build_from_lines(lines: typing.Iterable, split_line=str.split, line_index=True, segmentation_name='line_num', **kwargs): 
-        lines_split = it.RestartableMapIterator(lines, split_line)
-        lines_split_flat = it.RestartableFlattenIterator(lines_split)
-        vcb = build_vocab(lines_split_flat, **kwargs)
-        
+    def save(self, path, enumerate_iterables=True): 
+        if enumerate_iterables: self._enumerate_iterables()
+        with open(path, 'wb') as f: 
+            pickle.dump(self, f)
+
+    def load(path):
+        with open(path, 'rb') as f: 
+            return pickle.load(f)
+
+    def build_from_lines(lines: typing.Iterable, split_line=str.split, line_index=True, min_count=1, unk_token=default_unk_token): 
+        """Build corpus from lines.
+
+        Args:
+            lines (typing.Iterable): Iterable over strings that can be split by split_line.
+            split_line (_type_, optional): Function that splits lines. Defaults to str.spl
+            line_index (bool, optional): Whether to include a line index as a segmentation. Defaults to True.
+            min_count (int, optional): Minimum word count for vocabulary building. Defaults to 1.
+            unk_token (_type_, optional): Unknown token. Defaults to '<UNK>'.
+
+        Returns:
+            SegmentedCorpus: Built corpus.
+        """
+        lines_split = RestartableMapIterator(lines, split_line)
+        lines_split_flat = RestartableFlattenIterator(lines_split)
+        vcb = Vocab.build(flat_tokens=lines_split_flat, 
+                          min_count=min_count, unk_token=unk_token)
+        lines_split_flat_idx = RestartableMapIterator(
+            lines_split_flat, vcb.encode_token)
         segmentations={}
         if line_index: 
-            segmentations[segmentation_name] = []
+            segmentations['line_num'] = []
             for i, line in enumerate(lines_split):
-                segmentations[segmentation_name].append((i, len(line)))
-
-        corpus = SegmentedCorpus(vcb, lines_split_flat, segmentations, True)
+                segmentations['line_num'].append((i, len(line)))
+        corpus = SegmentedCorpus(data=lines_split_flat_idx, 
+                                 segmentation=segmentations, 
+                                 packed=True, vocab=vcb)
         return corpus
 
-    def build_conll(): 
-        pass
+    def build_conll(min_count=1, unk_token=default_unk_token, *args, **kwargs): 
+        """Builds corpus from CoNLL formatted file(s). 
+
+        Args:
+            min_count (int, optional): Minimum word count to consider when building vocabulary. Defaults to 1.
+            unk_token (_type_, optional): Unknown token. Defaults to '<UNK>'.
+
+        Returns:
+            SegmentedCorpus: Built corpus.
+        """
+        reader = nltk.corpus.reader.ConllChunkCorpusReader(*args, **kwargs)
+        segmentations = dict(POS=[], chunk_type=[], sent_num=[], chunk_num=[])
+        data = []
+        for i, sent in enumerate(reader.chunked_sents()): 
+            for j, chunk in enumerate(sent): 
+                if type(chunk) == tuple: 
+                    chunk = [chunk]
+                    chunk_type = 'punct'
+                else:
+                    chunk_type = chunk.label()
+                for word, POS in chunk: 
+                    segmentations['POS'].append(POS)
+                    segmentations['chunk_type'].append(chunk_type)
+                    segmentations['sent_num'].append(i)
+                    segmentations['chunk_num'].append(j)
+                    data.append(word)
+        vcb = Vocab.build(flat_tokens=data, min_count=min_count, 
+                          unk_token=unk_token)
+        data_idx = RestartableMapIterator(data, vcb.encode_token)
+        corpus = SegmentedCorpus(data=data_idx, 
+                                 segmentation=segmentations, 
+                                 packed=False, vocab=vcb)
+        return corpus
+    
+if __name__ == '__main__': 
+    corpus = SegmentedCorpus.build_conll(root='../corpora/conll2000/', fileids=['test.txt'], chunk_types=None)
+    corpus.list_available_segmentations()
+    corpus.save('connl.pkl')
+    corpus = SegmentedCorpus.load('connl.pkl')
+    for segments in itertools.islice(corpus.segments_wrt(('chunk_type', 'chunk_num'), 'POS'), 3): 
+        print(segments['label_coarse'])
+        for segment in segments['segments']:
+            print("\t", segment['label_fine'], corpus.vocab.decode_sent(segment['data']))
+            
+    corpus = SegmentedCorpus.build_from_lines(['a b c d e', 'f g h'])
+    for line in corpus.segments(None):
+        print(line)
+    for line in corpus.segments('line_num'):
+        print(line)
+    print()
+
+    s0 = [1,1,1,1,1,1,1,1,1]
+    s1 = [1,1,1,1,2,2,3,3,3]
+    s2 = [1,1,2,3,4,4,4,4,5]
+    seq = range(len(s1))
+    vcb = Vocab.build(seq)
+    sc = SegmentedCorpus(seq, [s0, s1, s2], False, vcb)
+    for seg in sc.segments_wrt((0, 1), 2): 
+        print(seg)
+    for seg in sc.segments(0): 
+        print(seg)
+
+    s0 = [(1,9)]
+    s1 = [(1,4), (2,2), (3,3)]
+    s2 = [(1,2), (2,1), (3,1), (4,4), (5,1)]
+    seq = range(9)
+    vcb = Vocab.build(seq)
+    sc = SegmentedCorpus(seq, [s0, s1, s2], True, vcb)
+    print()
+    for seg in sc.segments_wrt((0, 1), 2): 
+        print(seg)
+    for seg in sc.segments(0): 
+        print(seg)
