@@ -77,7 +77,7 @@ class Vocab:
     
 Key = typing.Union[str, int, typing.Set[typing.Union[str, int]]]
 
-class SegmentedCorpus:
+class Corpus:
     def __init__(self, data: typing.Iterable, 
                  segmentation: typing.Union[None, typing.Iterable, typing.List[typing.Iterable], typing.Dict[str, typing.Iterable]]=None,
                  packed=True,
@@ -135,9 +135,9 @@ class SegmentedCorpus:
             segmentations_single = [self.segmentations[k] for k in key]
             if self.packed: 
                 # for zipping, segmentations must be unpacked
-                segmentations_single = [SegmentedCorpus._unpack(s) for s in segmentations_single]
+                segmentations_single = [Corpus._unpack(s) for s in segmentations_single]
             segmentation = zip(*segmentations_single) # combine segmentations by zipping
-            segmentation = SegmentedCorpus._pack(segmentation) # pack again
+            segmentation = Corpus._pack(segmentation) # pack again
             return segmentation
     
     def _unpack(segmentation): 
@@ -194,7 +194,7 @@ class SegmentedCorpus:
             unk_token (_type_, optional): Unknown token. Defaults to '<UNK>'.
 
         Returns:
-            SegmentedCorpus: Built corpus.
+            Corpus: Built corpus.
         """
         lines_split = RestartableMapIterator(lines, split_line)
         lines_split_flat = RestartableFlattenIterator(lines_split)
@@ -207,7 +207,7 @@ class SegmentedCorpus:
             segmentations['line_num'] = []
             for i, line in enumerate(lines_split):
                 segmentations['line_num'].append((i, len(line)))
-        corpus = SegmentedCorpus(data=lines_split_flat_idx, 
+        corpus = Corpus(data=lines_split_flat_idx, 
                                  segmentation=segmentations, 
                                  packed=True, vocab=vcb)
         return corpus
@@ -220,7 +220,7 @@ class SegmentedCorpus:
             unk_token (_type_, optional): Unknown token. Defaults to '<UNK>'.
 
         Returns:
-            SegmentedCorpus: Built corpus.
+            Corpus: Built corpus.
         """
         reader = nltk.corpus.reader.ConllChunkCorpusReader(*args, **kwargs)
         segmentations = dict(POS=[], chunk_type=[], sent_num=[], chunk_num=[])
@@ -241,16 +241,16 @@ class SegmentedCorpus:
         vcb = Vocab.build(flat_tokens=data, min_count=min_count, 
                           unk_token=unk_token)
         data_idx = RestartableMapIterator(data, vcb.encode_token)
-        corpus = SegmentedCorpus(data=data_idx, 
+        corpus = Corpus(data=data_idx, 
                                  segmentation=segmentations, 
                                  packed=False, vocab=vcb)
         return corpus
     
 if __name__ == '__main__': 
-    corpus = SegmentedCorpus.build_conll(root='../corpora/conll2000/', fileids=['test.txt'], chunk_types=None)
+    corpus = Corpus.build_conll(root='../corpora/conll2000/', fileids=['test.txt'], chunk_types=None)
     print(corpus.list_available_segmentations())
     corpus.save('connl.pkl')
-    corpus = SegmentedCorpus.load('connl.pkl')
+    corpus = Corpus.load('connl.pkl')
     for segments in itertools.islice(corpus.segments(('chunk_type', 'chunk_num'), 'POS'), 3): 
         print(segments['label_coarse'])
         for segment in segments['segments']:
@@ -261,7 +261,7 @@ if __name__ == '__main__':
             print(f'chunk {seg["label_fine"]}')
             print(corpus.vocab.decode_sent(seg['data']))
             
-    corpus = SegmentedCorpus.build_from_lines([
+    corpus = Corpus.build_from_lines([
         'hello there', 
         'how are you ?',
     ], split_line=str.split, min_count=1, unk_token='<UNK>')
@@ -277,7 +277,7 @@ if __name__ == '__main__':
     s2 = [1,1,2,3,4,4,4,4,5]
     seq = range(len(s1))
     vcb = Vocab.build(seq)
-    sc = SegmentedCorpus(seq, [s0, s1, s2], False, vcb)
+    sc = Corpus(seq, [s0, s1, s2], False, vcb)
     for seg in sc.segments((0, 1), 2): 
         print(seg)
     for seg in sc.segments(0): 
@@ -288,7 +288,7 @@ if __name__ == '__main__':
     s2 = [(1,2), (2,1), (3,1), (4,4), (5,1)]
     seq = range(9)
     vcb = Vocab.build(seq)
-    sc = SegmentedCorpus(seq, [s0, s1, s2], True, vcb)
+    sc = Corpus(seq, [s0, s1, s2], True, vcb)
     print()
     for seg in sc.segments((0, 1), 2): 
         print(seg)
