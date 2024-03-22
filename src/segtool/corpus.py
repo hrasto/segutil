@@ -74,8 +74,9 @@ class Vocab:
     
 #vcb = Vocab.build('salkjdfhaszlkjdfhaskljdfhaslkjdfhajksdfhadsjklfhaslkjdfhasdkljfhasdlfj', min_count=1)
 #vcb.word_to_idx, vcb.word_to_count, vcb.encode_sent('blabla')
-    
+ 
 Key = typing.Union[str, int, typing.Set[typing.Union[str, int]]]
+
 
 class Corpus:
     def __init__(self, data: typing.Iterable, 
@@ -121,25 +122,11 @@ class Corpus:
                 raise KeyError(f'provided key (single) not in available segmentations ({",".join(self.list_available_segmentations())})')
         return key
     
-    def _default_segmentation(self): 
-        data_len = sum(1 for _ in self.data)
-        return map(lambda i: (i, 1), range(data_len))
-    
-    def _resolve_segmentation(self, *keys): 
-        """ normalizes key and returns a (packed) segmentation iterator """
-        if keys[0] is None: 
-            return self._default_segmentation()
-        else: 
-            keys = [self._normalize_key(k) for k in keys if k is not None]
-            key = set.union(*keys)
-            segmentations_single = [self.segmentations[k] for k in key]
-            if self.packed: 
-                # for zipping, segmentations must be unpacked
-                segmentations_single = [Corpus._unpack(s) for s in segmentations_single]
-            segmentation = zip(*segmentations_single) # combine segmentations by zipping
-            segmentation = Corpus._pack(segmentation) # pack again
-            return segmentation
-    
+    def _normalize_keys(self, *keys: typing.Tuple[Key]) -> Key:
+        keys = [self._normalize_key(k) for k in keys if k is not None]
+        key = set.union(*keys)
+        return key
+
     def _unpack(segmentation): 
         for label, size in segmentation: 
             for i in range(size): 
@@ -149,30 +136,66 @@ class Corpus:
         for key, group in itertools.groupby(segmentation): 
             yield key, sum(1 for _ in group)
 
-    def segments(self, coarse: Key, fine: Key=None):
-        seg_coarse = self._resolve_segmentation(coarse)
-        iter_data = iter(self.data)
-
-        if fine is None: 
-            for label, size in seg_coarse:
-                _data = [next(iter_data) for i in range(size)]
-                segment = {'data': _data, 'label': label}
-                yield segment
+    def _default_segmentation(self): 
+        data_len = sum(1 for _ in self.data)
+        return map(lambda i: (i, 1), range(data_len))
+    
+    def _resolve_segmentation(self, *keys): 
+        """ normalizes key and returns a (packed) segmentation iterator """
+        if None in keys: 
+            return self._default_segmentation()
         else: 
-            seg_fine = self._resolve_segmentation(fine, coarse)
-            iter_seg_fine = iter(seg_fine)
-            iter_seg_coarse = iter(seg_coarse)
-            while True: 
-                try: key_coarse, size_coarse = next(iter_seg_coarse)
-                except StopIteration: break
-                segment = []
-                while size_coarse > 0: 
-                    key_fine, size_fine = next(iter_seg_fine)
-                    segment.append({
-                        'data': [next(iter_data) for i in range(size_fine)], 
-                        'label_fine': key_fine})
-                    size_coarse -= size_fine
-                yield {'segments': segment, 'label_coarse': key_coarse}        
+            key = self._normalize_keys(*keys)
+            segmentations_single = [self.segmentations[k] for k in key]
+            if self.packed: 
+                # for zipping, segmentations must be unpacked
+                segmentations_single = [Corpus._unpack(s) for s in segmentations_single]
+            segmentation = zip(*segmentations_single) # combine segmentations by zipping
+            segmentation = Corpus._pack(segmentation) # pack again
+            return segmentation    
+
+    def _resolve_segmentation_adjusted(self, coarse: Key, fine: Key): 
+        """ iterates over coarse, but sizes are adjusted relative to the number of corresponding subsegments in fine (rather than elements in data) """
+        seg_fine = self._resolve_segmentation(coarse, fine)
+        iter_seg_fine = iter(seg_fine)
+        seg_coarse = self._resolve_segmentation(coarse)
+        for label_c, size_c in seg_coarse: 
+            size_c_accum = 0
+            num_fine_segments = 0
+            while size_c_accum < size_c: 
+                _, size_f = next(iter_seg_fine)
+                size_c_accum += size_f
+                num_fine_segments += 1
+            yield label_c, num_fine_segments
+
+    def segments(self, *segmentations: typing.Tuple[Key]):
+        """ segmentations should be in the order of coarse -> fine """
+        # normalize segmentations (each entry will be a set)
+        segmentation_keys = [self._normalize_keys(key) for key in segmentations]
+        # adjust the keys such that finer segmentation always contain the (boundaries of) coarser segmentations
+        segmentation_keys_cumul = [set.union(*segmentation_keys[:i]) for i in range(1, len(segmentation_keys)+1)]
+        segmentation_keys_cumul.append(None)
+        coarses = segmentation_keys_cumul[:-1]
+        fines = segmentation_keys_cumul[1:]
+        # get the (relative) segmentation iterables 
+        segmentation_iterables_adj = [self._resolve_segmentation_adjusted(c, f) for c, f in zip(coarses, fines)]
+        coarsest = segmentation_iterables_adj[0]
+        fines_adj = segmentation_iterables_adj[1:]
+        iter_fines = [iter(f) for f in fines_adj]
+        data_iter = iter(self.data)
+
+        def consume_iters(data, label, num, *iters): 
+            if len(iters) == 0: 
+                _data = list(itertools.islice(data, num))
+                return dict(data=_data, label=label)
+            else: 
+                _data = [consume_iters(data, *el, *iters[1:]) 
+                        for el in itertools.islice(iters[0], num)]
+                return dict(data=_data, label=label)
+
+        for label, size in coarsest:
+            # call helper that recursively builds a dictionary containing nested segmentation
+            yield consume_iters(data_iter, label, size, *iter_fines)
 
     def save(self, path, enumerate_iterables=True): 
         if enumerate_iterables: self._enumerate_iterables()
@@ -212,8 +235,8 @@ class Corpus:
                                  packed=True, vocab=vcb)
         return corpus
 
-    def build_conll(min_count=1, unk_token=default_unk_token, *args, **kwargs): 
-        """Builds corpus from CoNLL formatted file(s). 
+    def build_conll_chunk(min_count=1, unk_token=default_unk_token, *args, **kwargs): 
+        """Builds corpus from CoNLL formatted chunking file(s). 
 
         Args:
             min_count (int, optional): Minimum word count to consider when building vocabulary. Defaults to 1.
@@ -245,52 +268,3 @@ class Corpus:
                                  segmentation=segmentations, 
                                  packed=False, vocab=vcb)
         return corpus
-    
-if __name__ == '__main__': 
-    corpus = Corpus.build_conll(root='../corpora/conll2000/', fileids=['test.txt'], chunk_types=None)
-    print(corpus.list_available_segmentations())
-    corpus.save('connl.pkl')
-    corpus = Corpus.load('connl.pkl')
-    for segments in itertools.islice(corpus.segments(('chunk_type', 'chunk_num'), 'POS'), 3): 
-        print(segments['label_coarse'])
-        for segment in segments['segments']:
-            print("\t", segment['label_fine'], corpus.vocab.decode_sent(segment['data']))
-    for Seg in itertools.islice(corpus.segments(coarse='sent_num', fine='chunk_num'), 5): 
-        print(f'sent. {Seg["label_coarse"]}')
-        for seg in Seg['segments']: 
-            print(f'chunk {seg["label_fine"]}')
-            print(corpus.vocab.decode_sent(seg['data']))
-            
-    corpus = Corpus.build_from_lines([
-        'hello there', 
-        'how are you ?',
-    ], split_line=str.split, min_count=1, unk_token='<UNK>')
-
-    for line in corpus.segments(None):
-        print(corpus.vocab.decode_sent(line['data']), line['label'])
-    for line in corpus.segments('line_num'):
-        print(corpus.vocab.decode_sent(line['data']), line['label'])
-    print()
-
-    s0 = [1,1,1,1,1,1,1,1,1]
-    s1 = [1,1,1,1,2,2,3,3,3]
-    s2 = [1,1,2,3,4,4,4,4,5]
-    seq = range(len(s1))
-    vcb = Vocab.build(seq)
-    sc = Corpus(seq, [s0, s1, s2], False, vcb)
-    for seg in sc.segments((0, 1), 2): 
-        print(seg)
-    for seg in sc.segments(0): 
-        print(seg)
-
-    s0 = [(1,9)]
-    s1 = [(1,4), (2,2), (3,3)]
-    s2 = [(1,2), (2,1), (3,1), (4,4), (5,1)]
-    seq = range(9)
-    vcb = Vocab.build(seq)
-    sc = Corpus(seq, [s0, s1, s2], True, vcb)
-    print()
-    for seg in sc.segments((0, 1), 2): 
-        print(seg)
-    for seg in sc.segments(0): 
-        print(seg)
