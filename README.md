@@ -1,4 +1,4 @@
-# Segtool
+# segutil
 
 Tools for working with sequence (corpus) segmentations. 
 
