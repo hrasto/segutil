@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="segtool",
-    version="0.1.7",
+    version="1.0.0",
     author="Rastislav Hronsky",
     author_email="hronskyr@gmail.com",
     description="All kinds of segmenters",
@@ -32,7 +32,7 @@ setuptools.setup(
         'tokenizers',
         'numpy',
         'morfessor',
-        'dict',
+        'bidict',
         'nltk',
     ]
 )

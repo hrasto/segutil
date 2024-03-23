@@ -6,10 +6,10 @@ import pickle
 import itertools
 import nltk
 
-try: 
-    from .iterator import *
-except ImportError: 
-    from segmenters import RestartableMapIterator, RestartableFlattenIterator, RestartableBatchIterator, RestartableCallableIterator
+#try: 
+from .iterator import *
+#except ImportError: 
+#    from segmenters import RestartableMapIterator, RestartableFlattenIterator, RestartableBatchIterator, RestartableCallableIterator
 
 default_unk_token = '<UNK>'
 
@@ -77,10 +77,12 @@ class Vocab:
  
 Key = typing.Union[str, int, typing.Set[typing.Union[str, int]]]
 
-
 class Corpus:
     def __init__(self, data: typing.Iterable, 
-                 segmentation: typing.Union[None, typing.Iterable, typing.List[typing.Iterable], typing.Dict[str, typing.Iterable]]=None,
+                 segmentation: typing.Union[None, 
+                                            typing.Iterable, 
+                                            typing.List[typing.Iterable], 
+                                            typing.Dict[str, typing.Iterable]]=None,
                  packed=True,
                  vocab: Vocab=None) -> None:
         """Constructor
@@ -93,7 +95,7 @@ class Corpus:
         """
         self.vocab = vocab
         self.data = data
-        self.packed = packed
+        self._packed = packed
         if type(segmentation) == list: 
             self.segmentations = {i: s for i, s in enumerate(segmentation)}
         elif type(segmentation) == dict: 
@@ -147,7 +149,7 @@ class Corpus:
         else: 
             key = self._normalize_keys(*keys)
             segmentations_single = [self.segmentations[k] for k in key]
-            if self.packed: 
+            if self._packed: 
                 # for zipping, segmentations must be unpacked
                 segmentations_single = [Corpus._unpack(s) for s in segmentations_single]
             segmentation = zip(*segmentations_single) # combine segmentations by zipping
