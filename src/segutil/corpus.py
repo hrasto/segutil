@@ -71,27 +71,26 @@ class Vocab:
         word_to_count = collections.Counter({w: c for w, c in word_to_count.items() if c >= min_count})
         word_to_idx = bidict((word, i) for i, (word, count) in enumerate(word_to_count.most_common()))
         return Vocab(word_to_idx=word_to_idx, word_to_count=word_to_count, unk_token=unk_token)
-    
-#vcb = Vocab.build('salkjdfhaszlkjdfhaskljdfhaslkjdfhajksdfhadsjklfhaslkjdfhasdkljfhasdlfj', min_count=1)
-#vcb.word_to_idx, vcb.word_to_count, vcb.encode_sent('blabla')
  
 Key = typing.Union[str, int, typing.Set[typing.Union[str, int]]]
 
 class Corpus:
-    def __init__(self, data: typing.Iterable, 
+    def __init__(self, 
+                 data: typing.Iterable, 
                  segmentation: typing.Union[None, 
                                             typing.Iterable, 
                                             typing.List[typing.Iterable], 
                                             typing.Dict[str, typing.Iterable]]=None,
                  packed=True,
-                 vocab: Vocab=None) -> None:
+                 vocab: Vocab=None,
+                 ) -> None:
         """Constructor
 
         Args:
-            vocab (Vocab): Vocabulary object (use build_vocab function to obtain it)
             data (typing.Iterable): Any iterable object
             segmentation (typing.Union[None, typing.Iterable, typing.List[typing.Iterable], typing.Dict[str, typing.Iterable]], optional): Segmentations. Can be a dict, list, or a single segmentation. Defaults to None.
             packed (bool, optional): If true, indicates that in the provided segmentation format a single element is a tuple (segment_label, segment_size). Else, assumes segmentations are lists of labels where a consequtive sequence indicates a segment. Defaults to True.
+            vocab (Vocab): Vocabulary object (use build_vocab function to obtain it)
         """
         self.vocab = vocab
         self.data = data
@@ -121,7 +120,7 @@ class Corpus:
         key = set([_ for _ in key if _ is not None])
         for single in key: 
             if single not in self.segmentations: 
-                raise KeyError(f'provided key (single) not in available segmentations ({",".join(self.list_available_segmentations())})')
+                raise KeyError(f'provided key ({str(key)}) not in available segmentations ({", ".join(self.list_available_segmentations())})')
         return key
     
     def _normalize_keys(self, *keys: typing.Tuple[Key]) -> Key:
@@ -170,17 +169,19 @@ class Corpus:
                 num_fine_segments += 1
             yield label_c, num_fine_segments
 
-    def segments(self, *segmentations: typing.Tuple[Key]):
+    def segments(self, *segmentations: typing.Tuple[Key], as_dict=False, return_labels=False):
         """ segmentations should be in the order of coarse -> fine """
         # normalize segmentations (each entry will be a set)
         segmentation_keys = [self._normalize_keys(key) for key in segmentations]
         # adjust the keys such that finer segmentation always contain the (boundaries of) coarser segmentations
-        segmentation_keys_cumul = [set.union(*segmentation_keys[:i]) for i in range(1, len(segmentation_keys)+1)]
+        segmentation_keys_cumul = [set.union(*segmentation_keys[:i]) 
+                                   for i in range(1, len(segmentation_keys)+1)]
         segmentation_keys_cumul.append(None)
         coarses = segmentation_keys_cumul[:-1]
         fines = segmentation_keys_cumul[1:]
         # get the (relative) segmentation iterables 
-        segmentation_iterables_adj = [self._resolve_segmentation_adjusted(c, f) for c, f in zip(coarses, fines)]
+        segmentation_iterables_adj = [self._resolve_segmentation_adjusted(c, f) 
+                                      for c, f in zip(coarses, fines)]
         coarsest = segmentation_iterables_adj[0]
         fines_adj = segmentation_iterables_adj[1:]
         iter_fines = [iter(f) for f in fines_adj]
@@ -189,14 +190,19 @@ class Corpus:
         def consume_iters(data, label, num, *iters): 
             if len(iters) == 0: 
                 _data = list(itertools.islice(data, num))
-                return dict(data=_data, label=label)
             else: 
                 _data = [consume_iters(data, *el, *iters[1:]) 
                         for el in itertools.islice(iters[0], num)]
+            if as_dict: 
                 return dict(data=_data, label=label)
+            else: 
+                if return_labels:
+                    return (_data, label)
+                else: 
+                    return _data
 
         for label, size in coarsest:
-            # call helper that recursively builds a dictionary containing nested segmentation
+            # call helper that recursively builds a dictionary/tuple containing nested segmentation
             yield consume_iters(data_iter, label, size, *iter_fines)
 
     def save(self, path, enumerate_iterables=True): 
@@ -208,7 +214,11 @@ class Corpus:
         with open(path, 'rb') as f: 
             return pickle.load(f)
 
-    def build_from_lines(lines: typing.Iterable, split_line=str.split, line_index=True, min_count=1, unk_token=default_unk_token): 
+    def build_from_lines(lines: typing.Iterable, 
+                         split_line=str.split, 
+                         line_index=True, 
+                         min_count=1, 
+                         unk_token=default_unk_token): 
         """Build corpus from lines.
 
         Args:
@@ -237,7 +247,12 @@ class Corpus:
                                  packed=True, vocab=vcb)
         return corpus
 
-    def build_conll_chunk(min_count=1, unk_token=default_unk_token, *args, **kwargs): 
+    def build_conll_chunk(min_count=1, 
+                          unk_token=default_unk_token, 
+                          post_process=lambda x: x, 
+                          char_lvl=False, 
+                          vocab: Vocab=None, 
+                          *args, **kwargs): 
         """Builds corpus from CoNLL formatted chunking file(s). 
 
         Args:
@@ -249,24 +264,36 @@ class Corpus:
         """
         reader = nltk.corpus.reader.ConllChunkCorpusReader(*args, **kwargs)
         segmentations = dict(POS=[], chunk_type=[], sent_num=[], chunk_num=[])
+        if char_lvl: segmentations['word_num'] = []
         data = []
-        for i, sent in enumerate(reader.chunked_sents()): 
-            for j, chunk in enumerate(sent): 
+        for sent_num, sent in enumerate(reader.chunked_sents()): 
+            for chunk_num, chunk in enumerate(sent): 
                 if type(chunk) == tuple: 
                     chunk = [chunk]
                     chunk_type = 'punct'
                 else:
                     chunk_type = chunk.label()
-                for word, POS in chunk: 
-                    segmentations['POS'].append(POS)
-                    segmentations['chunk_type'].append(chunk_type)
-                    segmentations['sent_num'].append(i)
-                    segmentations['chunk_num'].append(j)
-                    data.append(word)
-        vcb = Vocab.build(flat_tokens=data, min_count=min_count, 
-                          unk_token=unk_token)
-        data_idx = RestartableMapIterator(data, vcb.encode_token)
+                for word_num, (word, POS) in enumerate(chunk): 
+                    if char_lvl: 
+                        for ch in word: 
+                            segmentations['POS'].append(POS)
+                            segmentations['chunk_type'].append(chunk_type)
+                            segmentations['sent_num'].append(sent_num)
+                            segmentations['chunk_num'].append(chunk_num)
+                            segmentations['word_num'].append(word_num)
+                            data.append(post_process(ch))
+                    else: 
+                        segmentations['POS'].append(POS)
+                        segmentations['chunk_type'].append(chunk_type)
+                        segmentations['sent_num'].append(sent_num)
+                        segmentations['chunk_num'].append(chunk_num)
+                        data.append(post_process(word))   
+        if vocab is None: vocab = Vocab.build(flat_tokens=data, 
+                                              min_count=min_count, 
+                                              unk_token=unk_token)
+        data_idx = RestartableMapIterator(data, vocab.encode_token)
         corpus = Corpus(data=data_idx, 
-                                 segmentation=segmentations, 
-                                 packed=False, vocab=vcb)
+                        segmentation=segmentations, 
+                        packed=False, 
+                        vocab=vocab)
         return corpus
