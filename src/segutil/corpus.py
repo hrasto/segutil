@@ -3,7 +3,7 @@ from bidict import bidict
 import collections
 import nltk
 import pickle
-import itertools
+import itertools; flatten = itertools.chain.from_iterable
 import nltk
 
 #try: 
@@ -300,3 +300,33 @@ class Corpus:
                         packed=False, 
                         vocab=vocab)
         return corpus
+    
+    def build_from_SICK(fpath, include_vocab=True):
+        try: 
+            import pandas as pd
+        except ImportError as err: 
+            print("pandas is required to use build_from_sick (pip install pandas)")
+            raise err
+
+        df = pd.read_csv(fpath, delimiter='\t', index_col='pair_ID')
+        punct = ["'", ',', '-', '.', '/']
+
+        def prep_sent(sent): 
+            sent = sent.lower()
+            for char in punct: 
+                sent = sent.replace(char, f' {char} ')
+            return [list(word) for word in sent.strip().split()]
+
+        all_tokens = flatten(df['sentence_A'].append(df['sentence_B']).str.lower().str.replace(' ', ''))
+        vocab = Vocab.build(sorted(set(all_tokens)))
+
+        corps = {}
+        for typ, A_or_B in itertools.product(['TRAIN', 'TRIAL', 'TEST'], ['A', 'B']):
+            prep = [prep_sent(sent) for sent in df[df['SemEval_set']==typ][f'sentence_{A_or_B}']]
+            prep_enc = vocab.encode(prep)
+            seg_sent = [(i, sum(1 for word in sent for char in word)) for i, sent in enumerate(prep)]
+            seg_word = [(i, len(word)) for i, word in enumerate(flatten(prep))]
+            prep_enc_flat = [char for sent in prep_enc for word in sent for char in word]
+            corp = Corpus(prep_enc_flat, dict(sent=seg_sent, word=seg_word), vocab=vocab, packed=True)
+            corps[(typ, A_or_B)] = corp
+        return corps
