@@ -44,27 +44,27 @@ class Vocab:
 
     def token_count(self):
         return int(sum(self.word_to_count.values()))
-
-    def encode_token(self, token):
+    
+    def _encode_token(self, token):
         return self.word_to_idx.get(token, self.word_to_idx[self.unk_token])
     
-    def encode_sent(self, sent):
-        return [self.encode_token(token) for token in sent]
+    def encode(self, seq):
+        if type(seq) in [str, int]: 
+            return self._encode_token(seq)
+        else:
+            seqiter = iter(seq)
+            return [self.encode(el) for el in seqiter]
 
-    def encode_batch(self, sents):
-        return [self.encode_sent(sent) for sent in sents]
-
-    def decode_token(self, token_idx):
+    def _decode_token(self, token_idx):
         return self.word_to_idx.inv[token_idx]
-
-    def decode_sent(self, sent, stringify=False):
-        tokens = [self.decode_token(token) for token in sent]
-        if stringify: tokens = ' '.join(tokens)
-        return tokens
-
-    def decode_batch(self, sents, stringify=False):
-        return [self.decode_sent(sent, stringify) for sent in sents]
     
+    def decode(self, seq):
+        if type(seq) in [str, int]: 
+            return self._decode_token(seq)
+        else:
+            seqiter = iter(seq)
+            return [self.decode(el) for el in seqiter]
+
     def build(flat_tokens:typing.Iterable=[], min_count=1, unk_token:str=default_unk_token):
         """ helper method to build a vocabulary from a stream of tokens """
         word_to_count = collections.Counter([tok for tok in flat_tokens])
@@ -169,7 +169,7 @@ class Corpus:
                 num_fine_segments += 1
             yield label_c, num_fine_segments
 
-    def segments(self, *segmentations: typing.Tuple[Key], as_dict=False, return_labels=False):
+    def segments(self, *segmentations: typing.Tuple[Key], as_dict=False, return_labels=False, decode=False):
         """ segmentations should be in the order of coarse -> fine """
         # normalize segmentations (each entry will be a set)
         segmentation_keys = [self._normalize_keys(key) for key in segmentations]
@@ -190,9 +190,12 @@ class Corpus:
         def consume_iters(data, label, num, *iters): 
             if len(iters) == 0: 
                 _data = list(itertools.islice(data, num))
+                if decode: 
+                    _data = self.vocab.decode(_data)
             else: 
                 _data = [consume_iters(data, *el, *iters[1:]) 
                         for el in itertools.islice(iters[0], num)]
+
             if as_dict: 
                 return dict(data=_data, label=label)
             else: 
