@@ -299,7 +299,7 @@ class Corpus:
         if vocab is None: vocab = Vocab.build(flat_tokens=data, 
                                               min_count=min_count, 
                                               unk_token=unk_token)
-        data_idx = RestartableMapIterator(data, vocab.encode_token)
+        data_idx = [vocab.encode_token(el) for el in data]
         corpus = Corpus(data=data_idx, 
                         segmentation=segmentations, 
                         packed=False, 
