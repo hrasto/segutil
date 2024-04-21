@@ -1,10 +1,8 @@
 import typing
 from bidict import bidict
 import collections
-import nltk
 import pickle
 import itertools; flatten = itertools.chain.from_iterable
-import nltk
 
 #try: 
 from .iterator import *
@@ -45,22 +43,22 @@ class Vocab:
     def token_count(self):
         return int(sum(self.word_to_count.values()))
     
-    def _encode_token(self, token):
+    def encode_token(self, token):
         return self.word_to_idx.get(token, self.word_to_idx[self.unk_token])
     
     def encode(self, seq):
         if type(seq) in [str, int]: 
-            return self._encode_token(seq)
+            return self.encode_token(seq)
         else:
             seqiter = iter(seq)
             return [self.encode(el) for el in seqiter]
 
-    def _decode_token(self, token_idx):
+    def decode_token(self, token_idx):
         return self.word_to_idx.inv[token_idx]
     
     def decode(self, seq):
         if type(seq) in [str, int]: 
-            return self._decode_token(seq)
+            return self.decode_token(seq)
         else:
             seqiter = iter(seq)
             return [self.decode(el) for el in seqiter]
@@ -265,6 +263,13 @@ class Corpus:
         Returns:
             Corpus: Built corpus.
         """
+
+        try: 
+            import nltk
+        except ImportError as err: 
+            print("nltk is required to use build_conll_chunk (pip install nltk)")
+            raise err
+
         reader = nltk.corpus.reader.ConllChunkCorpusReader(*args, **kwargs)
         segmentations = dict(POS=[], chunk_type=[], sent_num=[], chunk_num=[])
         if char_lvl: segmentations['word_num'] = []
