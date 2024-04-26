@@ -3,11 +3,7 @@ from bidict import bidict
 import collections
 import pickle
 import itertools; flatten = itertools.chain.from_iterable
-
-#try: 
 from .iterator import *
-#except ImportError: 
-#    from segmenters import RestartableMapIterator, RestartableFlattenIterator, RestartableBatchIterator, RestartableCallableIterator
 
 default_unk_token = '<UNK>'
 
@@ -63,12 +59,12 @@ class Vocab:
             seqiter = iter(seq)
             return [self.decode(el) for el in seqiter]
 
-    def build(flat_tokens:typing.Iterable=[], min_count=1, unk_token:str=default_unk_token):
-        """ helper method to build a vocabulary from a stream of tokens """
-        word_to_count = collections.Counter([tok for tok in flat_tokens])
-        word_to_count = collections.Counter({w: c for w, c in word_to_count.items() if c >= min_count})
-        word_to_idx = bidict((word, i) for i, (word, count) in enumerate(word_to_count.most_common()))
-        return Vocab(word_to_idx=word_to_idx, word_to_count=word_to_count, unk_token=unk_token)
+def build_vocab(flat_tokens:typing.Iterable=[], min_count=1, unk_token:str=default_unk_token):
+    """ helper method to build a vocabulary from a stream of tokens """
+    word_to_count = collections.Counter([tok for tok in flat_tokens])
+    word_to_count = collections.Counter({w: c for w, c in word_to_count.items() if c >= min_count})
+    word_to_idx = bidict((word, i) for i, (word, count) in enumerate(word_to_count.most_common()))
+    return Vocab(word_to_idx=word_to_idx, word_to_count=word_to_count, unk_token=unk_token)
  
 Key = typing.Union[str, int, typing.Set[typing.Union[str, int]]]
 
@@ -215,123 +211,123 @@ class Corpus:
         with open(path, 'rb') as f: 
             return pickle.load(f)
 
-    def build_from_lines(lines: typing.Iterable, 
-                         split_line=str.split, 
-                         line_index=True, 
-                         min_count=1, 
-                         unk_token=default_unk_token): 
-        """Build corpus from lines.
+def build_from_lines(lines: typing.Iterable, 
+                        split_line=str.split, 
+                        line_index=True, 
+                        min_count=1, 
+                        unk_token=default_unk_token): 
+    """Build corpus from lines.
 
-        Args:
-            lines (typing.Iterable): Iterable over strings that can be split by split_line.
-            split_line (_type_, optional): Function that splits lines. Defaults to str.spl
-            line_index (bool, optional): Whether to include a line index as a segmentation. Defaults to True.
-            min_count (int, optional): Minimum word count for vocabulary building. Defaults to 1.
-            unk_token (_type_, optional): Unknown token. Defaults to '<UNK>'.
+    Args:
+        lines (typing.Iterable): Iterable over strings that can be split by split_line.
+        split_line (_type_, optional): Function that splits lines. Defaults to str.spl
+        line_index (bool, optional): Whether to include a line index as a segmentation. Defaults to True.
+        min_count (int, optional): Minimum word count for vocabulary building. Defaults to 1.
+        unk_token (_type_, optional): Unknown token. Defaults to '<UNK>'.
 
-        Returns:
-            Corpus: Built corpus.
-        """
-        lines_split = RestartableMapIterator(lines, split_line)
-        lines_split_flat = RestartableFlattenIterator(lines_split)
-        vcb = Vocab.build(flat_tokens=lines_split_flat, 
-                          min_count=min_count, unk_token=unk_token)
-        lines_split_flat_idx = RestartableMapIterator(
-            lines_split_flat, vcb.encode_token)
-        segmentations={}
-        if line_index: 
-            segmentations['line_num'] = []
-            for i, line in enumerate(lines_split):
-                segmentations['line_num'].append((i, len(line)))
-        corpus = Corpus(data=lines_split_flat_idx, 
-                                 segmentation=segmentations, 
-                                 packed=True, vocab=vcb)
-        return corpus
+    Returns:
+        Corpus: Built corpus.
+    """
+    lines_split = RestartableMapIterator(lines, split_line)
+    lines_split_flat = RestartableFlattenIterator(lines_split)
+    vcb = build_vocab(flat_tokens=lines_split_flat, 
+                        min_count=min_count, unk_token=unk_token)
+    lines_split_flat_idx = RestartableMapIterator(
+        lines_split_flat, vcb.encode_token)
+    segmentations={}
+    if line_index: 
+        segmentations['line_num'] = []
+        for i, line in enumerate(lines_split):
+            segmentations['line_num'].append((i, len(line)))
+    corpus = Corpus(data=lines_split_flat_idx, 
+                                segmentation=segmentations, 
+                                packed=True, vocab=vcb)
+    return corpus
 
-    def build_conll_chunk(min_count=1, 
-                          unk_token=default_unk_token, 
-                          post_process=lambda x: x, 
-                          char_lvl=False, 
-                          vocab: Vocab=None, 
-                          *args, **kwargs): 
-        """Builds corpus from CoNLL formatted chunking file(s). 
+def build_conll_chunk(min_count=1, 
+                        unk_token=default_unk_token, 
+                        post_process=lambda x: x, 
+                        char_lvl=False, 
+                        vocab: Vocab=None, 
+                        *args, **kwargs): 
+    """Builds corpus from CoNLL formatted chunking file(s). 
 
-        Args:
-            min_count (int, optional): Minimum word count to consider when building vocabulary. Defaults to 1.
-            unk_token (_type_, optional): Unknown token. Defaults to '<UNK>'.
+    Args:
+        min_count (int, optional): Minimum word count to consider when building vocabulary. Defaults to 1.
+        unk_token (_type_, optional): Unknown token. Defaults to '<UNK>'.
 
-        Returns:
-            Corpus: Built corpus.
-        """
+    Returns:
+        Corpus: Built corpus.
+    """
 
-        try: 
-            import nltk
-        except ImportError as err: 
-            print("nltk is required to use build_conll_chunk (pip install nltk)")
-            raise err
+    try: 
+        import nltk
+    except ImportError as err: 
+        print("nltk is required to use build_conll_chunk (pip install nltk)")
+        raise err
 
-        reader = nltk.corpus.reader.ConllChunkCorpusReader(*args, **kwargs)
-        segmentations = dict(POS=[], chunk_type=[], sent_num=[], chunk_num=[])
-        if char_lvl: segmentations['word_num'] = []
-        data = []
-        for sent_num, sent in enumerate(reader.chunked_sents()): 
-            for chunk_num, chunk in enumerate(sent): 
-                if type(chunk) == tuple: 
-                    chunk = [chunk]
-                    chunk_type = 'punct'
-                else:
-                    chunk_type = chunk.label()
-                for word_num, (word, POS) in enumerate(chunk): 
-                    if char_lvl: 
-                        for ch in word: 
-                            segmentations['POS'].append(POS)
-                            segmentations['chunk_type'].append(chunk_type)
-                            segmentations['sent_num'].append(sent_num)
-                            segmentations['chunk_num'].append(chunk_num)
-                            segmentations['word_num'].append(word_num)
-                            data.append(post_process(ch))
-                    else: 
+    reader = nltk.corpus.reader.ConllChunkCorpusReader(*args, **kwargs)
+    segmentations = dict(POS=[], chunk_type=[], sent_num=[], chunk_num=[])
+    if char_lvl: segmentations['word_num'] = []
+    data = []
+    for sent_num, sent in enumerate(reader.chunked_sents()): 
+        for chunk_num, chunk in enumerate(sent): 
+            if type(chunk) == tuple: 
+                chunk = [chunk]
+                chunk_type = 'punct'
+            else:
+                chunk_type = chunk.label()
+            for word_num, (word, POS) in enumerate(chunk): 
+                if char_lvl: 
+                    for ch in word: 
                         segmentations['POS'].append(POS)
                         segmentations['chunk_type'].append(chunk_type)
                         segmentations['sent_num'].append(sent_num)
                         segmentations['chunk_num'].append(chunk_num)
-                        data.append(post_process(word))   
-        if vocab is None: vocab = Vocab.build(flat_tokens=data, 
-                                              min_count=min_count, 
-                                              unk_token=unk_token)
-        data_idx = [vocab.encode_token(el) for el in data]
-        corpus = Corpus(data=data_idx, 
-                        segmentation=segmentations, 
-                        packed=False, 
-                        vocab=vocab)
-        return corpus
-    
-    def build_from_SICK(fpath, include_vocab=True):
-        try: 
-            import pandas as pd
-        except ImportError as err: 
-            print("pandas is required to use build_from_sick (pip install pandas)")
-            raise err
+                        segmentations['word_num'].append(word_num)
+                        data.append(post_process(ch))
+                else: 
+                    segmentations['POS'].append(POS)
+                    segmentations['chunk_type'].append(chunk_type)
+                    segmentations['sent_num'].append(sent_num)
+                    segmentations['chunk_num'].append(chunk_num)
+                    data.append(post_process(word))   
+    if vocab is None: vocab = build_vocab(flat_tokens=data, 
+                                            min_count=min_count, 
+                                            unk_token=unk_token)
+    data_idx = [vocab.encode_token(el) for el in data]
+    corpus = Corpus(data=data_idx, 
+                    segmentation=segmentations, 
+                    packed=False, 
+                    vocab=vocab)
+    return corpus
 
-        df = pd.read_csv(fpath, delimiter='\t', index_col='pair_ID')
-        punct = ["'", ',', '-', '.', '/']
+def build_from_SICK(fpath, include_vocab=True):
+    try: 
+        import pandas as pd
+    except ImportError as err: 
+        print("pandas is required to use build_from_sick (pip install pandas)")
+        raise err
 
-        def prep_sent(sent): 
-            sent = sent.lower()
-            for char in punct: 
-                sent = sent.replace(char, f' {char} ')
-            return [list(word) for word in sent.strip().split()]
+    df = pd.read_csv(fpath, delimiter='\t', index_col='pair_ID')
+    punct = ["'", ',', '-', '.', '/']
 
-        all_tokens = flatten(df['sentence_A'].append(df['sentence_B']).str.lower().str.replace(' ', ''))
-        vocab = Vocab.build(sorted(set(all_tokens)))
+    def prep_sent(sent): 
+        sent = sent.lower()
+        for char in punct: 
+            sent = sent.replace(char, f' {char} ')
+        return [list(word) for word in sent.strip().split()]
 
-        corps = {}
-        for typ, A_or_B in itertools.product(['TRAIN', 'TRIAL', 'TEST'], ['A', 'B']):
-            prep = [prep_sent(sent) for sent in df[df['SemEval_set']==typ][f'sentence_{A_or_B}']]
-            prep_enc = vocab.encode(prep)
-            seg_sent = [(i, sum(1 for word in sent for char in word)) for i, sent in enumerate(prep)]
-            seg_word = [(i, len(word)) for i, word in enumerate(flatten(prep))]
-            prep_enc_flat = [char for sent in prep_enc for word in sent for char in word]
-            corp = Corpus(prep_enc_flat, dict(sent=seg_sent, word=seg_word), vocab=vocab, packed=True)
-            corps[(typ, A_or_B)] = corp
-        return corps
+    all_tokens = flatten(df['sentence_A'].append(df['sentence_B']).str.lower().str.replace(' ', ''))
+    vocab = build_vocab(sorted(set(all_tokens)))
+
+    corps = {}
+    for typ, A_or_B in itertools.product(['TRAIN', 'TRIAL', 'TEST'], ['A', 'B']):
+        prep = [prep_sent(sent) for sent in df[df['SemEval_set']==typ][f'sentence_{A_or_B}']]
+        prep_enc = vocab.encode(prep)
+        seg_sent = [(i, sum(1 for word in sent for char in word)) for i, sent in enumerate(prep)]
+        seg_word = [(i, len(word)) for i, word in enumerate(flatten(prep))]
+        prep_enc_flat = [char for sent in prep_enc for word in sent for char in word]
+        corp = Corpus(prep_enc_flat, dict(sent=seg_sent, word=seg_word), vocab=vocab, packed=True)
+        corps[(typ, A_or_B)] = corp
+    return corps
