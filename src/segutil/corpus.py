@@ -33,8 +33,9 @@ class Vocab:
     def add_type(self, token, count=0):
         if token in self.word_to_idx: 
             raise ValueError(f"token '{token}' is already in the vocabulary")
+        if self.word_to_count:
+            self.word_to_count[token] = count
         self.word_to_idx[token] = self._get_new_word_id()
-        self.word_to_count[token] = count
         return token
 
     def token_count(self):
@@ -64,12 +65,32 @@ class Vocab:
         else:
             seqiter = iter(seq)
             return [self.decode(el) for el in seqiter]
+        
+    def save(self, path): 
+        with open(path, 'wb') as f: 
+            pickle.dump(self, f)
 
-def build_vocab(flat_tokens:typing.Iterable=[], min_count=1, unk_token:str=default_unk_token):
-    """ helper method to build a vocabulary from a stream of tokens """
-    word_to_count = collections.Counter([tok for tok in flat_tokens])
-    word_to_count = collections.Counter({w: c for w, c in word_to_count.items() if c >= min_count})
-    word_to_idx = bidict((word, i) for i, (word, count) in enumerate(word_to_count.most_common()))
+    def load(path):
+        with open(path, 'rb') as f: 
+            return pickle.load(f)
+
+def build_vocab(flat_tokens:typing.Iterable=[], min_count=1, unk_token:str=default_unk_token, sort_by='dont'):
+    """ helper method to build a vocabulary from a stream of tokens. sort_by takes values from [dont, alpha, count] """
+    if sort_by == 'dont':
+        # assume flat_tokens is a set and we dont touch it anymore
+        assert len(set(flat_tokens)) == len(flat_tokens)
+        word_to_idx = bidict((word, i) for i, word in enumerate(flat_tokens))
+        word_to_count = None
+    else: 
+        word_to_count = collections.Counter([tok for tok in flat_tokens])
+        word_to_count = collections.Counter({w: c for w, c in word_to_count.items() if c >= min_count})
+        if sort_by == 'count': 
+            word_to_idx = bidict((word, i) for i, (word, count) in enumerate(word_to_count.most_common()))
+        elif sort_by == 'alpha': 
+            # sort 'alphabetically' 
+            sorted_keys = sorted(word_to_count.keys())
+            word_to_idx = bidict((word, i) for i, word in enumerate(sorted_keys))
+
     return Vocab(word_to_idx=word_to_idx, word_to_count=word_to_count, unk_token=unk_token)
  
 Key = typing.Union[str, int, typing.Set[typing.Union[str, int]]]
