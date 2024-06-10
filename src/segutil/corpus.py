@@ -15,10 +15,11 @@ class Vocab:
         self.word_to_count=word_to_count
         self.word_to_idx=word_to_idx
         self.unk_token=unk_token
-        try: 
-            self.add_type(unk_token)
-        except ValueError: 
-            pass
+        if unk_token: 
+            try: 
+                self.add_type(unk_token)
+            except ValueError: 
+                pass
 
     def __str__(self): 
         return str(self.word_to_idx)
@@ -39,8 +40,13 @@ class Vocab:
     def token_count(self):
         return int(sum(self.word_to_count.values()))
     
+    def get_unk_token_idx(self): 
+        if not self.unk_token: 
+            raise KeyError("don't have any unk_token, sorry, you have to use existing tokens only")
+        return self.word_to_idx[self.unk_token]
+    
     def encode_token(self, token):
-        return self.word_to_idx.get(token, self.word_to_idx[self.unk_token])
+        return self.word_to_idx.get(token, self.get_unk_token_idx())
     
     def encode(self, seq):
         if type(seq) in [str, int]: 
